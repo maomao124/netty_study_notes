@@ -76,6 +76,8 @@ selector 的作用就是配合一个线程来管理多个 channel，获取这些
 
 
 
+Buffer 是**非线程安全的**
+
 
 
 
@@ -554,4 +556,525 @@ public class ByteBufferUtil
 
 
 ### ByteBuffer常见方法
+
+#### 分配空间
+
+可以使用 allocate 方法为 ByteBuffer 分配空间，其它 buffer 类也有该方法
+
+```java
+//ByteBuffer分配空间，大小为10
+ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+```
+
+
+
+
+
+#### 向ByteBuffer写入数据
+
+有两种办法
+
+* 调用 channel 的 read 方法
+* 调用 buffer 自己的 put 方法
+
+
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t2
+ * Class(类名): ByteBufferPutTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 21:50
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class ByteBufferPutTest
+{
+    private static final Logger log = LoggerFactory.getLogger(ByteBufferPutTest.class);
+
+    public static void main(String[] args)
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+        //调用put方法
+        byteBuffer.put(new byte[]{'1', '2', '3', '4'});
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用put方法
+        byteBuffer.put(new byte[]{'5', '6'});
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+    }
+}
+
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [4], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 00 00 00 00 00 00                   |1234......      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+#### 从ByteBuffer读取数据
+
+同样有两种办法
+
+* 调用 channel 的 write 方法
+* 调用 buffer 自己的 get 方法
+
+
+
+```java
+int writeBytes = channel.write(byteBuffer);
+```
+
+或者
+
+```java
+byte b = byteBuffer.get();
+```
+
+
+
+get 方法会让 position 读指针向后走，如果想重复读取数据
+
+* 可以调用 rewind 方法将 position 重新置为 0
+* 或者调用 get(int i) 方法获取索引 i 的内容，它不会移动读指针
+
+
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t2
+ * Class(类名): ByteBufferGetTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 21:59
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class ByteBufferGetTest
+{
+    private static final Logger log = LoggerFactory.getLogger(ByteBufferPutTest.class);
+
+    public static void main(String[] args)
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+        //调用put方法
+        byteBuffer.put(new byte[]{'1', '2', '3', '4'});
+
+        //调用put方法
+        byteBuffer.put(new byte[]{'5', '6'});
+
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //按索引位置读取
+        byte b = byteBuffer.get(2);
+        System.out.println((char) b);
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+        //按索引位置读取
+        b = byteBuffer.get(4);
+        System.out.println((char) b);
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用get方法读取
+        b = byteBuffer.get();
+        System.out.println((char) b);
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用get方法读取
+        b = byteBuffer.get();
+        System.out.println((char) b);
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用rewind方法，将 position 重新置为 0
+        byteBuffer.rewind();
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用get方法读取
+        b = byteBuffer.get();
+        System.out.println((char) b);
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+3
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+5
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+ 
++--------+-------------------- all ------------------------+----------------+
+position: [7], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+ 
++--------+-------------------- all ------------------------+----------------+
+position: [8], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+1
++--------+-------------------- all ------------------------+----------------+
+position: [1], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+#### mark 和 reset
+
+mark 是在读取时，做一个标记，即使 position 改变，只要调用 reset 就能回到 mark 的位置
+
+
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t2
+ * Class(类名): ByteBufferMarkAndResetTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 22:04
+ * Version(版本): 1.0
+ * Description(描述)： mark 和 reset
+ */
+
+public class ByteBufferMarkAndResetTest
+{
+    private static final Logger log = LoggerFactory.getLogger(ByteBufferPutTest.class);
+
+    public static void main(String[] args)
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+        //调用put方法
+        byteBuffer.put(new byte[]{'1', '2', '3', '4'});
+        //调用put方法
+        byteBuffer.put(new byte[]{'5', '6'});
+
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用mark方法
+        byteBuffer.mark();
+
+        //调用两次get方法
+        byteBuffer.get();
+        byteBuffer.get();
+
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+        //调用reset方法
+        byteBuffer.reset();
+
+        //打印
+        ByteBufferUtil.debugAll(byteBuffer);
+
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [8], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 00 00 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+**rewind 和 flip 都会清除 mark 位置**
+
+
+
+
+
+
+
+#### 字符串与ByteBuffer互转
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t2
+ * Class(类名): StringToByteBufferTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 22:13
+ * Version(版本): 1.0
+ * Description(描述)： 字符串转ByteBuffer
+ */
+
+public class StringToByteBufferTest
+{
+    public static void main(String[] args)
+    {
+        String s = "hello\0你好";
+
+        //第1种
+        ByteBuffer byteBuffer1 = StandardCharsets.UTF_8.encode(s);
+        //第2种
+        ByteBuffer byteBuffer2 = Charset.forName("utf-8").encode(s);
+
+        ByteBufferUtil.debugAll(byteBuffer1);
+        ByteBufferUtil.debugAll(byteBuffer2);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [12]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 e4 bd a0 e5 a5 bd 00 00 00 00 |hello...........|
+|00000010| 00                                              |.               |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [12]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 e4 bd a0 e5 a5 bd 00 00 00 00 |hello...........|
+|00000010| 00                                              |.               |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+**ByteBuffer转String**
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t2
+ * Class(类名): ByteBufferToStringTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 22:22
+ * Version(版本): 1.0
+ * Description(描述)： ByteBuffer转String
+ */
+
+public class ByteBufferToStringTest
+{
+    private static final Logger log = LoggerFactory.getLogger(ByteBufferToStringTest.class);
+
+    public static void main(String[] args)
+    {
+        String s = "1234 hello 你好";
+
+        //第1种
+        ByteBuffer byteBuffer1 = StandardCharsets.UTF_8.encode(s);
+        //第2种
+        ByteBuffer byteBuffer2 = Charset.forName("utf-8").encode(s);
+
+        ByteBufferUtil.debugAll(byteBuffer1);
+        ByteBufferUtil.debugAll(byteBuffer2);
+
+        CharBuffer charBuffer1 = StandardCharsets.UTF_8.decode(byteBuffer1);
+        CharBuffer charBuffer2 = StandardCharsets.UTF_8.decode(byteBuffer2);
+
+        String s1 = charBuffer1.toString();
+        String s2 = charBuffer2.toString();
+
+        log.info(s1);
+        log.info(s2);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [17]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 20 68 65 6c 6c 6f 20 e4 bd a0 e5 a5 |1234 hello .....|
+|00000010| bd 00 00 00 00 00 00 00 00 00 00 00 00          |.............   |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [17]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 20 68 65 6c 6c 6f 20 e4 bd a0 e5 a5 |1234 hello .....|
+|00000010| bd 00 00 00 00 00 00 00 00 00 00 00 00          |.............   |
++--------+-------------------------------------------------+----------------+
+2023-03-05  22:26:02.809  [main] INFO  mao.t2.ByteBufferToStringTest:  1234 hello 你好
+2023-03-05  22:26:02.810  [main] INFO  mao.t2.ByteBufferToStringTest:  1234 hello 你好
+```
+
+
+
+
+
+
+
+### Scattering Reads
 
