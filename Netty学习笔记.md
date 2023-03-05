@@ -1078,3 +1078,119 @@ position: [0], limit: [17]
 
 ### Scattering Reads
 
+现在有以下文件data2.txt，文件内容为：
+
+```sh
+onetwothreefour
+```
+
+
+
+现在要将这4个单词读按顺序读到4个ByteBuffer里，已知每个单词的长度
+
+
+
+```java
+package mao.t3;
+
+import mao.utils.ByteBufferUtil;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t3
+ * Class(类名): ScatteringReadsTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 22:39
+ * Version(版本): 1.0
+ * Description(描述)： Scattering Reads
+ */
+
+public class ScatteringReadsTest
+{
+    public static void main(String[] args)
+    {
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("data2.txt", "rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+
+            //构建4个ByteBuffer
+            ByteBuffer byteBuffer1 = ByteBuffer.allocate(3);
+            ByteBuffer byteBuffer2 = ByteBuffer.allocate(3);
+            ByteBuffer byteBuffer3 = ByteBuffer.allocate(5);
+            ByteBuffer byteBuffer4 = ByteBuffer.allocate(4);
+
+            //ByteBuffer数组
+            ByteBuffer[] byteBuffers = new ByteBuffer[]{byteBuffer1, byteBuffer2, byteBuffer3, byteBuffer4};
+
+            //读取，并写入到4个ByteBuffer中
+            fileChannel.read(byteBuffers);
+
+            //打印
+            ByteBufferUtil.debugAll(byteBuffer1);
+            ByteBufferUtil.debugAll(byteBuffer2);
+            ByteBufferUtil.debugAll(byteBuffer3);
+            ByteBufferUtil.debugAll(byteBuffer4);
+
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [3]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 6f 6e 65                                        |one             |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [3]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 74 77 6f                                        |two             |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [5], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 74 68 72 65 65                                  |three           |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [4], limit: [4]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 66 6f 75 72                                     |four            |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+### Gathering Writes
+
+需求：将多个 ByteBuffer 的数据填充至 channel
+
+
+
