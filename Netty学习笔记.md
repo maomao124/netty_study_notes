@@ -82,3 +82,476 @@ selector 的作用就是配合一个线程来管理多个 channel，获取这些
 
 ### 入门
 
+有一普通文本文件 data.txt，内容为
+
+```sh
+1234567890abcdef12345678
+
+```
+
+
+
+现在需要从文件里读取数据，要求：使用 FileChannel 来读取文件内容
+
+
+
+```java
+package mao.t1;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 21:08
+ * Version(版本): 1.0
+ * Description(描述)： ByteBuffer入门，ByteBuffer一次读10个
+ */
+
+public class FileChannelTest
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelTest.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args)
+    {
+        //RandomAccessFile对象
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("data.txt", "rw"))
+        {
+            //得到FileChannel
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            //ByteBuffer，大小为10
+            ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+            do
+            {
+                //写入，并记录长度
+                int len = fileChannel.read(byteBuffer);
+                log.debug("读到字节数：{}", len);
+                //如果长度为-1，就是后面没有了
+                if (len == -1)
+                {
+                    break;
+                }
+                //切换到读模式，开始打印
+                byteBuffer.flip();
+                //判断后面是否还有，如果有，打印
+                while (byteBuffer.hasRemaining())
+                {
+                    log.debug("{}", (char) byteBuffer.get());
+                }
+                //ByteBuffer读到最后面了
+                //切换到写模式
+                byteBuffer.clear();
+            }
+            while (true);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-05  21:28:08.337  [main] DEBUG mao.t1.FileChannelTest:  读到字节数：10
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  1
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  2
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  3
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  4
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  5
+2023-03-05  21:28:08.338  [main] DEBUG mao.t1.FileChannelTest:  6
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  7
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  8
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  9
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  0
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  读到字节数：10
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  a
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  b
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  c
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  d
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  e
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  f
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  1
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  2
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  3
+2023-03-05  21:28:08.339  [main] DEBUG mao.t1.FileChannelTest:  4
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  读到字节数：6
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  5
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  6
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  7
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  8
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  
+
+2023-03-05  21:28:08.340  [main] DEBUG mao.t1.FileChannelTest:  读到字节数：-1
+```
+
+
+
+
+
+
+
+### ByteBuffer 结构
+
+ByteBuffer 有以下重要属性
+
+* capacity
+* position
+* limit
+
+
+
+一开始
+
+![image-20230305213101095](img/Netty学习笔记/image-20230305213101095.png)
+
+
+
+写模式下，position 是写入位置，limit 等于容量
+
+写入4字节后
+
+
+
+![image-20230305213156908](img/Netty学习笔记/image-20230305213156908.png)
+
+
+
+
+
+flip 动作发生后，position 切换为读取位置，limit 切换为读取限制
+
+![image-20230305213255468](img/Netty学习笔记/image-20230305213255468.png)
+
+
+
+
+
+读取 4 个字节后，状态
+
+
+
+![image-20230305213308513](img/Netty学习笔记/image-20230305213308513.png)
+
+
+
+
+
+clear 动作发生后，状态
+
+
+
+![image-20230305213322899](img/Netty学习笔记/image-20230305213322899.png)
+
+
+
+
+
+compact 方法，是把未读完的部分向前压缩，然后切换至写模式
+
+
+
+![image-20230305213354895](img/Netty学习笔记/image-20230305213354895.png)
+
+
+
+
+
+
+
+
+
+### 工具类
+
+需要两个依赖
+
+```xml
+<dependency>
+    <groupId>io.netty</groupId>
+    <artifactId>netty-all</artifactId>
+    <version>4.1.39.Final</version>
+</dependency>
+
+<dependency>
+    <groupId>com.google.guava</groupId>
+    <artifactId>guava</artifactId>
+    <version>20.0</version>
+</dependency>
+```
+
+
+
+
+
+
+
+```java
+package mao.utils;
+
+
+import io.netty.util.internal.StringUtil;
+
+import java.nio.ByteBuffer;
+
+import static io.netty.util.internal.MathUtil.isOutOfBounds;
+import static io.netty.util.internal.StringUtil.NEWLINE;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.utils
+ * Class(类名): ByteBufferUtil
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/5
+ * Time(创建时间)： 21:34
+ * Version(版本): 1.0
+ * Description(描述)： 工具类
+ */
+
+public class ByteBufferUtil
+{
+    private static final char[] BYTE2CHAR = new char[256];
+    private static final char[] HEXDUMP_TABLE = new char[256 * 4];
+    private static final String[] HEXPADDING = new String[16];
+    private static final String[] HEXDUMP_ROWPREFIXES = new String[65536 >>> 4];
+    private static final String[] BYTE2HEX = new String[256];
+    private static final String[] BYTEPADDING = new String[16];
+
+    static
+    {
+        final char[] DIGITS = "0123456789abcdef".toCharArray();
+        for (int i = 0; i < 256; i++)
+        {
+            HEXDUMP_TABLE[i << 1] = DIGITS[i >>> 4 & 0x0F];
+            HEXDUMP_TABLE[(i << 1) + 1] = DIGITS[i & 0x0F];
+        }
+
+        int i;
+
+        // Generate the lookup table for hex dump paddings
+        for (i = 0; i < HEXPADDING.length; i++)
+        {
+            int padding = HEXPADDING.length - i;
+            StringBuilder buf = new StringBuilder(padding * 3);
+            for (int j = 0; j < padding; j++)
+            {
+                buf.append("   ");
+            }
+            HEXPADDING[i] = buf.toString();
+        }
+
+        // Generate the lookup table for the start-offset header in each row (up to 64KiB).
+        for (i = 0; i < HEXDUMP_ROWPREFIXES.length; i++)
+        {
+            StringBuilder buf = new StringBuilder(12);
+            buf.append(NEWLINE);
+            buf.append(Long.toHexString(i << 4 & 0xFFFFFFFFL | 0x100000000L));
+            buf.setCharAt(buf.length() - 9, '|');
+            buf.append('|');
+            HEXDUMP_ROWPREFIXES[i] = buf.toString();
+        }
+
+        // Generate the lookup table for byte-to-hex-dump conversion
+        for (i = 0; i < BYTE2HEX.length; i++)
+        {
+            BYTE2HEX[i] = ' ' + StringUtil.byteToHexStringPadded(i);
+        }
+
+        // Generate the lookup table for byte dump paddings
+        for (i = 0; i < BYTEPADDING.length; i++)
+        {
+            int padding = BYTEPADDING.length - i;
+            StringBuilder buf = new StringBuilder(padding);
+            for (int j = 0; j < padding; j++)
+            {
+                buf.append(' ');
+            }
+            BYTEPADDING[i] = buf.toString();
+        }
+
+        // Generate the lookup table for byte-to-char conversion
+        for (i = 0; i < BYTE2CHAR.length; i++)
+        {
+            if (i <= 0x1f || i >= 0x7f)
+            {
+                BYTE2CHAR[i] = '.';
+            }
+            else
+            {
+                BYTE2CHAR[i] = (char) i;
+            }
+        }
+    }
+
+    /**
+     * 打印所有内容
+     *
+     * @param buffer 缓冲
+     */
+    public static void debugAll(ByteBuffer buffer)
+    {
+        int oldlimit = buffer.limit();
+        buffer.limit(buffer.capacity());
+        StringBuilder origin = new StringBuilder(256);
+        appendPrettyHexDump(origin, buffer, 0, buffer.capacity());
+        System.out.println("+--------+-------------------- all ------------------------+----------------+");
+        System.out.printf("position: [%d], limit: [%d]\n", buffer.position(), oldlimit);
+        System.out.println(origin);
+        buffer.limit(oldlimit);
+    }
+
+    /**
+     * 打印可读取内容
+     *
+     * @param buffer 缓冲
+     */
+    public static void debugRead(ByteBuffer buffer)
+    {
+        StringBuilder builder = new StringBuilder(256);
+        appendPrettyHexDump(builder, buffer, buffer.position(), buffer.limit() - buffer.position());
+        System.out.println("+--------+-------------------- read -----------------------+----------------+");
+        System.out.printf("position: [%d], limit: [%d]\n", buffer.position(), buffer.limit());
+        System.out.println(builder);
+    }
+
+    private static void appendPrettyHexDump(StringBuilder dump, ByteBuffer buf, int offset, int length)
+    {
+        if (isOutOfBounds(offset, length, buf.capacity()))
+        {
+            throw new IndexOutOfBoundsException(
+                    "expected: " + "0 <= offset(" + offset + ") <= offset + length(" + length
+                            + ") <= " + "buf.capacity(" + buf.capacity() + ')');
+        }
+        if (length == 0)
+        {
+            return;
+        }
+        dump.append("         +-------------------------------------------------+").append(NEWLINE).append("         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |").append(NEWLINE).append("+--------+-------------------------------------------------+----------------+");
+
+        final int startIndex = offset;
+        final int fullRows = length >>> 4;
+        final int remainder = length & 0xF;
+
+        // Dump the rows which have 16 bytes.
+        for (int row = 0; row < fullRows; row++)
+        {
+            int rowStartIndex = (row << 4) + startIndex;
+
+            // Per-row prefix.
+            appendHexDumpRowPrefix(dump, row, rowStartIndex);
+
+            // Hex dump
+            int rowEndIndex = rowStartIndex + 16;
+            for (int j = rowStartIndex; j < rowEndIndex; j++)
+            {
+                dump.append(BYTE2HEX[getUnsignedByte(buf, j)]);
+            }
+            dump.append(" |");
+
+            // ASCII dump
+            for (int j = rowStartIndex; j < rowEndIndex; j++)
+            {
+                dump.append(BYTE2CHAR[getUnsignedByte(buf, j)]);
+            }
+            dump.append('|');
+        }
+
+        // Dump the last row which has less than 16 bytes.
+        if (remainder != 0)
+        {
+            int rowStartIndex = (fullRows << 4) + startIndex;
+            appendHexDumpRowPrefix(dump, fullRows, rowStartIndex);
+
+            // Hex dump
+            int rowEndIndex = rowStartIndex + remainder;
+            for (int j = rowStartIndex; j < rowEndIndex; j++)
+            {
+                dump.append(BYTE2HEX[getUnsignedByte(buf, j)]);
+            }
+            dump.append(HEXPADDING[remainder]);
+            dump.append(" |");
+
+            // Ascii dump
+            for (int j = rowStartIndex; j < rowEndIndex; j++)
+            {
+                dump.append(BYTE2CHAR[getUnsignedByte(buf, j)]);
+            }
+            dump.append(BYTEPADDING[remainder]);
+            dump.append('|');
+        }
+
+        dump.append(NEWLINE +
+                "+--------+-------------------------------------------------+----------------+");
+    }
+
+    /**
+     * 将十六进制转储行前缀
+     *
+     * @param dump          转储
+     * @param row           行
+     * @param rowStartIndex 行开始指数
+     */
+    private static void appendHexDumpRowPrefix(StringBuilder dump, int row, int rowStartIndex)
+    {
+        if (row < HEXDUMP_ROWPREFIXES.length)
+        {
+            dump.append(HEXDUMP_ROWPREFIXES[row]);
+        }
+        else
+        {
+            dump.append(NEWLINE);
+            dump.append(Long.toHexString(rowStartIndex & 0xFFFFFFFFL | 0x100000000L));
+            dump.setCharAt(dump.length() - 9, '|');
+            dump.append('|');
+        }
+    }
+
+    /**
+     * 得到无符号字节
+     *
+     * @param buffer 缓冲
+     * @param index  指数
+     * @return short
+     */
+    public static short getUnsignedByte(ByteBuffer buffer, int index)
+    {
+        return (short) (buffer.get(index) & 0xFF);
+    }
+}
+```
+
+
+
+
+
+
+
+
+
+### ByteBuffer常见方法
+
