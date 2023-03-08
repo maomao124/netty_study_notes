@@ -1307,3 +1307,152 @@ fivesix
 
 ### 黏包和半包
 
+#### 说明
+
+网络上有多条数据发送给服务端，数据之间使用 \n 进行分隔
+但由于某种原因这些数据在接收时，被进行了重新组合，例如原始数据有3条为
+
+* Hello,world\n
+* I'm zhangsan\n
+* How are you?\n
+
+变成了下面的两个 byteBuffer (黏包，半包)
+
+* Hello,world\nI'm zhangsan\nHo
+* w are you?\n
+
+
+
+现在要求你编写程序，将错乱的数据恢复成原始的按 \n 分隔的数据
+
+
+
+#### 解决
+
+```java
+package mao.t4;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuffer
+ * Package(包名): mao.t4
+ * Class(类名): StickyAndHalfPackedTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/8
+ * Time(创建时间)： 21:41
+ * Version(版本): 1.0
+ * Description(描述)： 黏包和半包
+ */
+
+public class StickyAndHalfPackedTest
+{
+
+    private static final Logger log = LoggerFactory.getLogger(StickyAndHalfPackedTest.class);
+
+    public static void main(String[] args)
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(64);
+        byteBuffer.put("Hello,world\nI'm zhangsan\nHo".getBytes(StandardCharsets.UTF_8));
+        split(byteBuffer);
+        byteBuffer.put("w are you?\nhaha!\n".getBytes(StandardCharsets.UTF_8));
+        split(byteBuffer);
+    }
+
+
+    /**
+     * 分割
+     *
+     * @param byteBuffer 字节缓冲区
+     */
+    private static void split(ByteBuffer byteBuffer)
+    {
+        //切换到读模式
+        byteBuffer.flip();
+        //得到limit
+        int limit = byteBuffer.limit();
+        for (int i = 0; i < limit; i++)
+        {
+            //判断是否遇到了换换行符
+            if (byteBuffer.get(i) == '\n')
+            {
+                //换行符
+                log.debug(String.valueOf(i));
+                //开辟一个一行长度的ByteBuffer
+                ByteBuffer target = ByteBuffer.allocate(i + 1 - byteBuffer.position());
+                //设置limit
+                byteBuffer.limit(i + 1);
+                //从byteBuffer读，向target写
+                target.put(byteBuffer);
+                //打印
+                ByteBufferUtil.debugAll(target);
+                byteBuffer.limit(limit);
+            }
+        }
+        //切换到写模式，未读完的部分继续
+        byteBuffer.compact();
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [12], limit: [12]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 2c 77 6f 72 6c 64 0a             |Hello,world.    |
++--------+-------------------------------------------------+----------------+
+2023-03-08  21:58:18.919  [main] DEBUG mao.t4.StickyAndHalfPackedTest:  24
++--------+-------------------- all ------------------------+----------------+
+position: [13], limit: [13]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 49 27 6d 20 7a 68 61 6e 67 73 61 6e 0a          |I'm zhangsan.   |
++--------+-------------------------------------------------+----------------+
+2023-03-08  21:58:18.919  [main] DEBUG mao.t4.StickyAndHalfPackedTest:  12
++--------+-------------------- all ------------------------+----------------+
+position: [13], limit: [13]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 6f 77 20 61 72 65 20 79 6f 75 3f 0a          |How are you?.   |
++--------+-------------------------------------------------+----------------+
+2023-03-08  21:58:18.920  [main] DEBUG mao.t4.StickyAndHalfPackedTest:  18
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [6]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 61 68 61 21 0a                               |haha!.          |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 文件编程
+
+### FileChannel
+
