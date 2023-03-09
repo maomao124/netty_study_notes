@@ -1456,3 +1456,253 @@ position: [6], limit: [6]
 
 ### FileChannel
 
+FileChannel 只能工作在阻塞模式下
+
+
+
+#### 获取
+
+不能直接打开 FileChannel，必须通过 FileInputStream、FileOutputStream 或者 RandomAccessFile 来获取 FileChannel，它们都有 getChannel 方法
+
+* 通过 FileInputStream 获取的 channel 只能读
+* 通过 FileOutputStream 获取的 channel 只能写
+* 通过 RandomAccessFile 是否能读写根据构造 RandomAccessFile 时的读写模式决定
+
+
+
+
+
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelGetTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/8
+ * Time(创建时间)： 22:10
+ * Version(版本): 1.0
+ * Description(描述)： 得到FileChannel
+ */
+
+public class FileChannelGetTest
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelGetTest.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args)
+    {
+        //第一种方法，通过 FileInputStream 获取
+        try (FileInputStream fileInputStream = new FileInputStream("test.txt"))
+        {
+            FileChannel fileChannel = fileInputStream.getChannel();
+            log.debug(fileChannel.toString());
+            //尝试读
+            ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+            fileChannel.read(byteBuffer);
+            byteBuffer.flip();
+            byte b = byteBuffer.get(2);
+            log.debug(String.valueOf((char) b));
+            //打印
+            ByteBufferUtil.debugAll(byteBuffer);
+
+            //尝试写
+            byteBuffer.clear();
+            byteBuffer.put("abc".getBytes(StandardCharsets.UTF_8));
+            //打印
+            ByteBufferUtil.debugAll(byteBuffer);
+            try
+            {
+                fileChannel.write(byteBuffer);
+            }
+            catch (Exception e)
+            {
+                log.error("写入失败：", e);
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+
+
+
+        //第二种方法，通过 FileOutputStream 获取
+        try (FileOutputStream fileOutputStream = new FileOutputStream("test.txt"))
+        {
+            FileChannel fileChannel = fileOutputStream.getChannel();
+            log.debug(fileChannel.toString());
+            //尝试读
+            ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+            try
+            {
+                fileChannel.read(byteBuffer);
+                byteBuffer.flip();
+                byte b = byteBuffer.get(2);
+                log.debug(String.valueOf((char) b));
+                //打印
+                ByteBufferUtil.debugAll(byteBuffer);
+            }
+            catch (Exception e)
+            {
+                log.error("读失败：", e);
+            }
+
+            //尝试写
+            byteBuffer.clear();
+            byteBuffer.put("abc".getBytes(StandardCharsets.UTF_8));
+            //打印
+            ByteBufferUtil.debugAll(byteBuffer);
+            try
+            {
+                //切换读模式
+                byteBuffer.flip();
+                fileChannel.write(byteBuffer);
+            }
+            catch (Exception e)
+            {
+                log.error("写入失败：", e);
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+
+
+       //第三种方法，通过 FileInputStream 获取
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("test.txt","rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            log.debug(fileChannel.toString());
+            //尝试读
+            ByteBuffer byteBuffer = ByteBuffer.allocate(10);
+            try
+            {
+                fileChannel.read(byteBuffer);
+                byteBuffer.flip();
+                byte b = byteBuffer.get(2);
+                log.debug(String.valueOf((char) b));
+                //打印
+                ByteBufferUtil.debugAll(byteBuffer);
+            }
+            catch (Exception e)
+            {
+                log.error("读失败：", e);
+            }
+
+            //尝试写
+            byteBuffer.clear();
+            byteBuffer.put("abcdefg".getBytes(StandardCharsets.UTF_8));
+            //打印
+            ByteBufferUtil.debugAll(byteBuffer);
+            try
+            {
+                //切换读模式
+                byteBuffer.flip();
+                fileChannel.write(byteBuffer);
+            }
+            catch (Exception e)
+            {
+                log.error("写入失败：", e);
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-08  22:36:45.992  [main] DEBUG mao.t1.FileChannelGetTest:  sun.nio.ch.FileChannelImpl@22ef9844
+2023-03-08  22:36:45.993  [main] DEBUG mao.t1.FileChannelGetTest:  3
+2023-03-08  22:36:45.995  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [8]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 0d 0a 00 00                   |123456....      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 34 35 36 0d 0a 00 00                   |abc456....      |
++--------+-------------------------------------------------+----------------+
+2023-03-08  22:36:45.999  [main] ERROR mao.t1.FileChannelGetTest:  写入失败：
+java.nio.channels.NonWritableChannelException: null
+	at sun.nio.ch.FileChannelImpl.write(FileChannelImpl.java:273) ~[?:?]
+	at mao.t1.FileChannelGetTest.main(FileChannelGetTest.java:62) [classes/:?]
+2023-03-08  22:36:46.007  [main] DEBUG mao.t1.FileChannelGetTest:  sun.nio.ch.FileChannelImpl@73e9cf30
+2023-03-08  22:36:46.007  [main] ERROR mao.t1.FileChannelGetTest:  读失败：
+java.nio.channels.NonReadableChannelException: null
+	at sun.nio.ch.FileChannelImpl.read(FileChannelImpl.java:217) ~[?:?]
+	at mao.t1.FileChannelGetTest.main(FileChannelGetTest.java:86) [classes/:?]
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 00 00 00 00 00 00 00                   |abc.......      |
++--------+-------------------------------------------------+----------------+
+2023-03-08  22:36:46.007  [main] DEBUG mao.t1.FileChannelGetTest:  sun.nio.ch.FileChannelImpl@242b836
+2023-03-08  22:36:46.008  [main] DEBUG mao.t1.FileChannelGetTest:  c
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [3]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 00 00 00 00 00 00 00                   |abc.......      |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [7], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 64 65 66 67 00 00 00                   |abcdefg...      |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+#### 读取
+
+会从 channel 读取数据填充 ByteBuffer，返回值表示读到了多少字节，-1 表示到达了文件的末尾
+
+
+
