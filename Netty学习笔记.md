@@ -1706,3 +1706,457 @@ position: [7], limit: [10]
 
 
 
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelReadTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/8
+ * Time(创建时间)： 22:39
+ * Version(版本): 1.0
+ * Description(描述)： FileChannel读
+ */
+
+public class FileChannelReadTest
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelReadTest.class);
+
+
+    public static void main(String[] args)
+    {
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("test.txt", "rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+            //读
+            int length = fileChannel.read(byteBuffer);
+            log.debug("长度：" + length);
+            ByteBufferUtil.debugAll(byteBuffer);
+            length = fileChannel.read(byteBuffer);
+            log.debug("长度：" + length);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-10  22:51:57.481  [main] DEBUG mao.t1.FileChannelReadTest:  长度：10
+2023-03-10  22:51:57.484  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [10], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 61 62 63 64 65 66 67 00 00 00 00 00 00 |abcabcdefg......|
++--------+-------------------------------------------------+----------------+
+2023-03-10  22:51:57.490  [main] DEBUG mao.t1.FileChannelReadTest:  长度：-1
+```
+
+
+
+
+
+
+
+#### 写入
+
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelWriteTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/10
+ * Time(创建时间)： 22:54
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class FileChannelWriteTest
+{
+
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelWriteTest.class);
+
+    public static void main(String[] args)
+    {
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("test.txt", "rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+            byteBuffer.put("hello.".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            //切换读模式
+            byteBuffer.flip();
+            ByteBufferUtil.debugAll(byteBuffer);
+            //写
+            if (byteBuffer.hasRemaining())
+            {
+                fileChannel.write(byteBuffer);
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
++--------+-------------------- all ------------------------+----------------+
+position: [6], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 2e 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [6]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 2e 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+文件内容：
+
+```sh
+hello.defg
+```
+
+
+
+
+
+#### 关闭
+
+channel 必须关闭，不过调用了 FileInputStream、FileOutputStream 或者 RandomAccessFile 的 close 方法会间接地调用 channel 的 close 方法
+
+
+
+
+
+#### 位置
+
+获取当前位置
+
+```sh
+channel.position();
+```
+
+
+
+设置当前位置
+
+```sh
+channel.position(newPos);
+```
+
+
+
+
+
+设置当前位置时，如果设置为文件的末尾
+
+* 这时读取会返回 -1 
+* 这时写入，会追加内容，但要注意如果 position 超过了文件末尾，再写入时在新内容和原末尾之间会有空洞（00）
+
+
+
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelPositionTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/10
+ * Time(创建时间)： 23:01
+ * Version(版本): 1.0
+ * Description(描述)： 位置操作
+ */
+
+public class FileChannelPositionTest
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelPositionTest.class);
+
+    public static void main(String[] args)
+    {
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("test.txt", "rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+            System.out.println("当前位置：" + fileChannel.position());
+            byteBuffer.put("123456789456".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            System.out.println("当前位置：" + fileChannel.position());
+
+            byteBuffer = ByteBuffer.allocate(16);
+            byteBuffer.put("abc".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            System.out.println("当前位置：" + fileChannel.position());
+
+            //设置位置
+            fileChannel.position(20);
+
+            byteBuffer = ByteBuffer.allocate(16);
+            byteBuffer.put("def".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            System.out.println("当前位置：" + fileChannel.position());
+
+            //设置位置
+            fileChannel.position(3);
+
+            byteBuffer = ByteBuffer.allocate(16);
+            byteBuffer.put("-".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            System.out.println("当前位置：" + fileChannel.position());
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+当前位置：0
+2023-03-10  23:11:23.139  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [12], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 37 38 39 34 35 36 00 00 00 00 |123456789456....|
++--------+-------------------------------------------------+----------------+
+当前位置：12
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 61 62 63 00 00 00 00 00 00 00 00 00 00 00 00 00 |abc.............|
++--------+-------------------------------------------------+----------------+
+当前位置：15
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 64 65 66 00 00 00 00 00 00 00 00 00 00 00 00 00 |def.............|
++--------+-------------------------------------------------+----------------+
+当前位置：23
++--------+-------------------- all ------------------------+----------------+
+position: [1], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 2d 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |-...............|
++--------+-------------------------------------------------+----------------+
+当前位置：4
+```
+
+
+
+文件内容：
+
+```sh
+123-56789456abc     def
+```
+
+
+
+![image-20230310231309092](img/Netty学习笔记/image-20230310231309092.png)
+
+
+
+
+
+
+
+#### 大小
+
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t1
+ * Class(类名): FileChannelSizeTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/10
+ * Time(创建时间)： 23:13
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class FileChannelSizeTest
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(FileChannelSizeTest.class);
+
+    public static void main(String[] args)
+    {
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile("test.txt", "rw"))
+        {
+            FileChannel fileChannel = randomAccessFile.getChannel();
+            ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+
+            log.debug("文件大小：" + fileChannel.size());
+
+            byteBuffer.put("def".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            log.debug("文件大小：" + fileChannel.size());
+
+
+            //设置位置
+            fileChannel.position(30);
+
+            byteBuffer = ByteBuffer.allocate(16);
+            byteBuffer.put("-".getBytes(StandardCharsets.UTF_8));
+            ByteBufferUtil.debugAll(byteBuffer);
+            byteBuffer.flip();
+            fileChannel.write(byteBuffer);
+            log.debug("文件大小：" + fileChannel.size());
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-10  23:16:55.236  [main] DEBUG mao.t1.FileChannelSizeTest:  文件大小：0
+2023-03-10  23:16:55.239  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [3], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 64 65 66 00 00 00 00 00 00 00 00 00 00 00 00 00 |def.............|
++--------+-------------------------------------------------+----------------+
+2023-03-10  23:16:55.243  [main] DEBUG mao.t1.FileChannelSizeTest:  文件大小：3
++--------+-------------------- all ------------------------+----------------+
+position: [1], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 2d 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |-...............|
++--------+-------------------------------------------------+----------------+
+2023-03-10  23:16:55.243  [main] DEBUG mao.t1.FileChannelSizeTest:  文件大小：31
+```
+
+
+
+
+
+
+
+#### 强制写入
+
+操作系统出于性能的考虑，会将数据缓存，不是立刻写入磁盘。可以调用 force(true)  方法将文件内容和元数据（文件的权限等信息）立刻写入磁盘
+
+
+
+
+
+
+
+### 两个 Channel 传输数据
+
