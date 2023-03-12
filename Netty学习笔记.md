@@ -2369,3 +2369,447 @@ D:\程序\大四下期\Netty_File_Programming\test.txt
 
 ### Files
 
+#### 检查文件是否存在
+
+```java
+Files.exists(path)
+```
+
+
+
+```java
+package mao.t4;
+
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest1
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/11
+ * Time(创建时间)： 21:48
+ * Version(版本): 1.0
+ * Description(描述)： 检查文件是否存在
+ */
+
+public class FilesTest1
+{
+    public static void main(String[] args)
+    {
+        Path path1 = Paths.get("./test.txt");
+        Path path2 = Paths.get("./test2.txt");
+        //检查文件是否存在
+        System.out.println(Files.exists(path1));
+        System.out.println(Files.exists(path2));
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+true
+false
+```
+
+
+
+
+
+#### 创建一级目录
+
+```java
+Files.createDirectory(path);
+```
+
+
+
+```java
+package mao.t4;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/11
+ * Time(创建时间)： 21:51
+ * Version(版本): 1.0
+ * Description(描述)： 创建一级目录
+ */
+
+public class FilesTest2
+{
+    public static void main(String[] args) throws IOException
+    {
+        Path path = Paths.get("./abc");
+        //创建一级目录
+        Path directory = Files.createDirectory(path);
+        System.out.println(directory);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+.\abc
+```
+
+
+
+![image-20230311215453524](img/Netty学习笔记/image-20230311215453524.png)
+
+
+
+* 如果目录已存在，会抛异常 FileAlreadyExistsException
+* 不能一次创建多级目录，否则会抛异常 NoSuchFileException
+
+
+
+```java
+package mao.t4;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/11
+ * Time(创建时间)： 21:51
+ * Version(版本): 1.0
+ * Description(描述)： 创建一级目录
+ */
+
+public class FilesTest2
+{
+    public static void main(String[] args) throws IOException
+    {
+        Path path = Paths.get("./abc");
+        //创建一级目录
+        Path directory = Files.createDirectory(path);
+        System.out.println(directory);
+
+        try
+        {
+            //如果目录已存在，会抛异常 FileAlreadyExistsException
+            path = Paths.get("./abc");
+            //创建一级目录
+            directory = Files.createDirectory(path);
+            System.out.println(directory);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+        try
+        {
+            //不能一次创建多级目录，否则会抛异常NoSuchFileException
+            path = Paths.get("./abc/de/f/gh");
+            //创建一级目录
+            directory = Files.createDirectory(path);
+            System.out.println(directory);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+.\abc
+java.nio.file.FileAlreadyExistsException: .\abc
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(WindowsException.java:87)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:103)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:108)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.createDirectory(WindowsFileSystemProvider.java:519)
+	at java.base/java.nio.file.Files.createDirectory(Files.java:694)
+	at mao.t4.FilesTest2.main(FilesTest2.java:35)
+java.nio.file.NoSuchFileException: .\abc\de\f\gh
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(WindowsException.java:85)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:103)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:108)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.createDirectory(WindowsFileSystemProvider.java:519)
+	at java.base/java.nio.file.Files.createDirectory(Files.java:694)
+	at mao.t4.FilesTest2.main(FilesTest2.java:48)
+```
+
+
+
+
+
+
+
+#### 创建多级目录
+
+```java
+Files.createDirectories(path);
+```
+
+
+
+```java
+package mao.t4;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest3
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/11
+ * Time(创建时间)： 21:58
+ * Version(版本): 1.0
+ * Description(描述)： 创建多级目录
+ */
+
+public class FilesTest3
+{
+    public static void main(String[] args) throws IOException
+    {
+        Path path = Paths.get("./abc/d/e/f/g/h");
+        //创建多级目录
+        Path directories = Files.createDirectories(path);
+        System.out.println(directories);
+
+        //再次创建
+        path = Paths.get("./abc/d/e/f/g/h");
+        directories = Files.createDirectories(path);
+        System.out.println(directories);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+D:\程序\大四下期\Netty_File_Programming\.\abc\d\e\f\g\h
+.\abc\d\e\f\g\h
+```
+
+
+
+![image-20230311220100652](img/Netty学习笔记/image-20230311220100652.png)
+
+
+
+
+
+
+
+#### 拷贝文件
+
+```sh
+Files.copy(source, target);
+```
+
+
+
+如果文件已存在，会抛异常 FileAlreadyExistsException
+
+
+
+如果希望用 source 覆盖掉 target，需要用 StandardCopyOption 来控制
+
+```sh
+Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+```
+
+
+
+
+
+```java
+package mao.t4;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest4
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/11
+ * Time(创建时间)： 22:02
+ * Version(版本): 1.0
+ * Description(描述)： 拷贝文件
+ */
+
+public class FilesTest4
+{
+    public static void main(String[] args) throws InterruptedException
+    {
+        Path path1 = Paths.get("./test.txt");
+        Path path2 = Paths.get("./test2.txt");
+
+        try
+        {
+            //拷贝文件
+            Path path = Files.copy(path1, path2);
+            System.out.println(path);
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+
+        try
+        {
+            //再次尝试拷贝文件，如果文件已存在，会抛异常 FileAlreadyExistsException
+            Files.copy(path1, path2);
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+
+        Thread.sleep(100);
+
+        try
+        {
+            //拷贝文件
+            Path path = Files.copy(path1, path2, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("文件覆盖成功");
+            System.out.println(path);
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+    }
+}
+
+```
+
+
+
+运行结果：
+
+```sh
+.\test2.txt
+java.nio.file.FileAlreadyExistsException: .\test2.txt
+	at java.base/sun.nio.fs.WindowsFileCopy.copy(WindowsFileCopy.java:123)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.copy(WindowsFileSystemProvider.java:284)
+	at java.base/java.nio.file.Files.copy(Files.java:1299)
+	at mao.t4.FilesTest4.main(FilesTest4.java:43)
+文件覆盖成功
+.\test2.txt
+```
+
+
+
+
+
+
+
+#### 移动文件
+
+```java
+Files.move(path, path1);
+```
+
+StandardCopyOption.ATOMIC_MOVE 保证文件移动的原子性
+
+
+
+```java
+package mao.t4;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+/**
+ * Project name(项目名称)：Netty_File_Programming
+ * Package(包名): mao.t4
+ * Class(类名): FilesTest6
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/12
+ * Time(创建时间)： 14:28
+ * Version(版本): 1.0
+ * Description(描述)： 移动文件
+ */
+
+public class FilesTest6
+{
+    private static final Logger log = LoggerFactory.getLogger(FilesTest6.class);
+
+    public static void main(String[] args) throws IOException
+    {
+        Path path = Paths.get("test.txt");
+        Path path1 = Paths.get("test3.txt");
+        log.info(path.toString() + " to " + path1.toString());
+        Path path2 = Files.move(path, path1);
+        log.info(path2.toString());
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-12  14:31:35.995  [main] INFO  mao.t4.FilesTest6:  test.txt to test3.txt
+2023-03-12  14:31:35.997  [main] INFO  mao.t4.FilesTest6:  test3.txt
+```
+
+
+
+
+
+
+
+#### 删除文件
+
