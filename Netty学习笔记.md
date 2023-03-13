@@ -3769,3 +3769,246 @@ position: [0], limit: [5]
 
 ### Selector
 
+![image-20230313203813297](img/Netty学习笔记/image-20230313203813297.png)
+
+
+
+
+
+好处
+
+* 一个线程配合 selector 就可以监控多个 channel 的事件，事件发生线程才去处理。避免非阻塞模式下所做无用功
+* 让这个线程能够被充分利用
+* 节约了线程的数量
+* 减少了线程上下文切换
+
+
+
+
+
+#### 创建
+
+```java
+Selector selector = Selector.open();
+```
+
+
+
+
+
+#### 绑定 Channel 事件
+
+也称之为注册事件
+
+```java
+channel.configureBlocking(false);
+SelectionKey key = channel.register(selector, 绑定事件);
+```
+
+
+
+* channel 必须工作在非阻塞模式
+* FileChannel 没有非阻塞模式，因此不能配合 selector 一起使用
+* 绑定的事件类型可以有
+  * connect - 客户端连接成功时触发
+  * accept - 服务器端成功接受连接时触发
+  * read - 数据可读入时触发，有因为接收能力弱，数据暂不能读入的情况
+  * write - 数据可写出时触发，有因为发送能力弱，数据暂不能写出的情况
+
+
+
+
+
+#### 监听 Channel 事件
+
+可以通过下面三种方法来监听是否有事件发生，方法的返回值代表有多少 channel 发生了事件
+
+
+
+方法1，阻塞直到绑定事件发生
+
+```java
+int count = selector.select();
+```
+
+
+
+
+
+方法2，阻塞直到绑定事件发生，或是超时（时间单位为 ms）
+
+```java
+int count = selector.select(long timeout);
+```
+
+
+
+
+
+方法3，不会阻塞，也就是不管有没有事件，立刻返回，自己根据返回值检查是否有事件
+
+```sh
+int count = selector.selectNow();
+```
+
+
+
+
+
+
+
+**select 何时不阻塞?**
+
+* 事件发生时
+  * 客户端发起连接请求，会触发 accept 事件
+  * 客户端发送数据过来，客户端正常、异常关闭时，都会触发 read 事件，另外如果发送的数据大于 buffer 缓冲区，会触发多次读取事件
+  * channel 可写，会触发 write 事件
+  * 在 linux 下 nio bug 发生时
+* 调用 selector.wakeup()
+* 调用 selector.close()
+* selector 所在线程 interrupt
+
+
+
+
+
+
+
+#### 处理 accept 事件
+
+
+
+```java
+package mao.t3;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t3
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 20:50
+ * Version(版本): 1.0
+ * Description(描述)： select - 服务端
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t3.Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException, InterruptedException
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //设置成非阻塞模式
+        serverSocketChannel.configureBlocking(false);
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+
+        //Selector
+        Selector selector = Selector.open();
+        //注册，事件为OP_WRITE
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    serverSocketChannel.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                try
+                {
+                    selector.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+
+            }
+        }));
+
+        while (true)
+        {
+            int count = selector.select();
+            log.debug("事件总数：" + count);
+
+            //获取所有事件
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+
+            Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            while (iterator.hasNext())
+            {
+                //获得SelectionKey
+                SelectionKey selectionKey = iterator.next();
+                //判断事件类型
+
+                //连接服务器
+                if (selectionKey.isAcceptable())
+                {
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    //处理连接事件
+                    SocketChannel socketChannel = ssc.accept();
+                    log.debug("连接事件：" + socketChannel);
+                }
+
+                // 处理完毕，必须将事件移除
+                iterator.remove();
+            }
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-13  21:21:39.835  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:21:39.837  [main] DEBUG mao.t3.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:62918]
+2023-03-13  21:21:41.854  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:21:41.854  [main] DEBUG mao.t3.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:62922]
+2023-03-13  21:21:47.043  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:21:47.044  [main] DEBUG mao.t3.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:62927]
+```
+
+
+
+
+
+
+
+#### 处理 read 事件
+
