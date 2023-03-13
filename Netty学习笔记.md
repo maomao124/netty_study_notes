@@ -4012,3 +4012,205 @@ public class Server
 
 #### 处理 read 事件
 
+```java
+package mao.t3;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t3
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 20:50
+ * Version(版本): 1.0
+ * Description(描述)： select - 服务端
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t3.Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException, InterruptedException
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //设置成非阻塞模式
+        serverSocketChannel.configureBlocking(false);
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+
+        //Selector
+        Selector selector = Selector.open();
+        //注册，事件为OP_WRITE
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    serverSocketChannel.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                try
+                {
+                    selector.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+
+            }
+        }));
+
+        while (true)
+        {
+            int count = selector.select();
+            log.debug("事件总数：" + count);
+
+            //获取所有事件
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+
+            Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            while (iterator.hasNext())
+            {
+                //获得SelectionKey
+                SelectionKey selectionKey = iterator.next();
+                //判断事件类型
+
+                //连接服务器
+                if (selectionKey.isAcceptable())
+                {
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    //处理连接事件
+                    SocketChannel socketChannel = ssc.accept();
+                    log.debug("连接事件：" + socketChannel);
+                    //非阻塞
+                    socketChannel.configureBlocking(false);
+                    //注册，事件为OP_WRITE
+                    socketChannel.register(selector, SelectionKey.OP_READ);
+                    log.debug("连接已注册到selector");
+                }
+
+                //读事件
+                else if (selectionKey.isReadable())
+                {
+                    SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                    //处理读事件
+                    log.debug("读事件：" + socketChannel);
+                    int read = socketChannel.read(byteBuffer);
+                    if (read == -1)
+                    {
+                        selectionKey.cancel();
+                        socketChannel.close();
+                    }
+                    else
+                    {
+                        byteBuffer.flip();
+                        ByteBufferUtil.debugAll(byteBuffer);
+                        byteBuffer.clear();
+                    }
+
+                }
+
+                // 处理完毕，必须将事件移除
+                iterator.remove();
+            }
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-13  21:40:39.869  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:40:39.871  [main] DEBUG mao.t3.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63466]
+2023-03-13  21:40:39.871  [main] DEBUG mao.t3.Server:  连接已注册到selector
+2023-03-13  21:40:56.924  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:40:56.925  [main] DEBUG mao.t3.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63466]
+2023-03-13  21:40:56.929  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  21:41:11.388  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:41:11.388  [main] DEBUG mao.t3.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63466]
+2023-03-13  21:41:23.993  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:41:23.994  [main] DEBUG mao.t3.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63475]
+2023-03-13  21:41:23.994  [main] DEBUG mao.t3.Server:  连接已注册到selector
+2023-03-13  21:41:36.106  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:41:36.106  [main] DEBUG mao.t3.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63475]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  21:41:46.074  [main] DEBUG mao.t3.Server:  事件总数：1
+2023-03-13  21:41:46.074  [main] DEBUG mao.t3.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:63475]
+```
+
+
+
+
+
+
+
+**为何要 iter.remove()?**
+
+因为 select 在事件发生后，就会将相关的 key 放入 selectedKeys 集合，但不会在处理完后从 selectedKeys 集合中移除，需要我们自己编码删除。例如
+
+* 第一次触发了 ssckey 上的 accept 事件，没有移除 ssckey 
+* 第二次触发了 sckey 上的 read 事件，但这时 selectedKeys 中还有上次的 ssckey ，在处理时因为没有真正的 serverSocket 连上了，就会导致空指针异常
+
+
+
+**cancel 的作用**
+
+cancel 会取消注册在 selector 上的 channel，并从 keys 集合中删除 key 后续不会再监听事件
+
+
+
+
+
+
+
+#### 处理消息的边界
+
