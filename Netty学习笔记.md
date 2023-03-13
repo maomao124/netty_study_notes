@@ -3406,3 +3406,366 @@ public class FilesTest10
 
 
 ## 网络编程
+
+### 非阻塞和阻塞
+
+#### 阻塞
+
+* 阻塞模式下，相关方法都会导致线程暂停
+  * ServerSocketChannel.accept 会在没有连接建立时让线程暂停
+  * SocketChannel.read 会在没有数据可读时让线程暂停
+  * 阻塞的表现其实就是线程暂停了，暂停期间不会占用 cpu，但线程相当于闲置
+* 单线程下，阻塞方法之间相互影响，几乎不能正常工作，需要多线程支持
+* 但多线程下，有新的问题，体现在以下方面
+  * 32 位 jvm 一个线程 320k，64 位 jvm 一个线程 1024k，如果连接数过多，必然导致 OOM，并且线程太多，反而会因为频繁上下文切换导致性能降低
+  * 可以采用线程池技术来减少线程数和线程上下文切换，但治标不治本，如果有很多连接建立，但长时间 inactive，会阻塞线程池中所有线程，因此不适合长连接，只适合短连接
+
+
+
+服务器端
+
+```java
+package mao.t1;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t1
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 19:28
+ * Version(版本): 1.0
+ * Description(描述)： 阻塞模式 - 服务器端
+ */
+
+public class Server
+{
+
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+        //连接集合
+        List<SocketChannel> socketChannelList = new ArrayList<>();
+
+        while (true)
+        {
+            log.debug("等待客户端连接...");
+            SocketChannel socketChannel = serverSocketChannel.accept();
+            log.debug("客户端已连接：" + socketChannel);
+            //放入连接集合
+            socketChannelList.add(socketChannel);
+
+            //遍历连接集合
+            for (SocketChannel channel : socketChannelList)
+            {
+                log.debug("等待读：" + channel);
+                int read = channel.read(byteBuffer);
+                byteBuffer.flip();
+                ByteBufferUtil.debugAll(byteBuffer);
+                byteBuffer.clear();
+                log.debug("读取成功：" + channel);
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+客户端
+
+```java
+package mao.t1;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t1
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 19:29
+ * Version(版本): 1.0
+ * Description(描述)： 阻塞模式 - 客户端
+ */
+
+public class Client
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(Client.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.connect(new InetSocketAddress("127.0.0.1", 8080));
+        Scanner input = new Scanner(System.in);
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.close();
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-13  19:55:29.913  [main] DEBUG mao.t1.Server:  等待客户端连接...
+2023-03-13  19:55:34.369  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52287]
+2023-03-13  19:55:34.369  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52287]
+2023-03-13  19:55:47.916  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  19:55:47.924  [main] DEBUG mao.t1.Server:  读取成功：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52287]
+2023-03-13  19:55:47.924  [main] DEBUG mao.t1.Server:  等待客户端连接...
+```
+
+
+
+如果在等待客户端读的过程中有另一个客户端建立连接，那么必须要等到第一个客户端发送数据后才能建立连接
+
+
+
+```sh
+2023-03-13  19:56:50.020  [main] DEBUG mao.t1.Server:  等待客户端连接...
+2023-03-13  19:56:55.019  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52309]
+2023-03-13  19:56:55.019  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52309]
+2023-03-13  19:57:14.891  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  19:57:14.895  [main] DEBUG mao.t1.Server:  读取成功：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52309]
+2023-03-13  19:57:14.895  [main] DEBUG mao.t1.Server:  等待客户端连接...
+2023-03-13  19:57:14.895  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52314]
+2023-03-13  19:57:14.895  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52309]
+```
+
+
+
+
+
+
+
+#### 非阻塞
+
+* 非阻塞模式下，相关方法都会不会让线程暂停
+  * 在 ServerSocketChannel.accept 在没有连接建立时，会返回 null，继续运行
+  * SocketChannel.read 在没有数据可读时，会返回 0，但线程不必阻塞，可以去执行其它 SocketChannel 的 read 或是去执行 ServerSocketChannel.accept 
+  * 写数据时，线程只是等待数据写入 Channel 即可，无需等 Channel 通过网络把数据发送出去
+* 但非阻塞模式下，即使没有连接建立，和可读数据，线程仍然在不断运行，白白浪费了 cpu
+* 数据复制过程中，线程实际还是阻塞的（AIO 改进的地方）
+
+
+
+
+
+服务器端
+
+```java
+package mao.t2;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t2
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 20:08
+ * Version(版本): 1.0
+ * Description(描述)： 非阻塞模式 - 服务器端
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t1.Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException, InterruptedException
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //设置成非阻塞模式
+        serverSocketChannel.configureBlocking(false);
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+        //连接集合
+        List<SocketChannel> socketChannelList = new ArrayList<>();
+
+
+        while (true)
+        {
+            //log.debug("等待客户端连接...");
+            SocketChannel socketChannel = serverSocketChannel.accept();
+            if (socketChannel != null)
+            {
+                log.debug("客户端已连接：" + socketChannel);
+                //设置成非阻塞模式
+                socketChannel.configureBlocking(false);
+                //放入连接集合
+                socketChannelList.add(socketChannel);
+            }
+
+            //遍历连接集合
+            for (SocketChannel channel : socketChannelList)
+            {
+                int read = channel.read(byteBuffer);
+                if (read > 0)
+                {
+                    log.debug("等待读：" + channel);
+                    byteBuffer.flip();
+                    ByteBufferUtil.debugAll(byteBuffer);
+                    byteBuffer.clear();
+                    log.debug("读取成功：" + channel);
+                }
+            }
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-13  20:21:36.165  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52663]
+2023-03-13  20:22:00.145  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52674]
+2023-03-13  20:22:15.488  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52663]
+2023-03-13  20:22:15.490  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  20:22:15.494  [main] DEBUG mao.t1.Server:  读取成功：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52663]
+2023-03-13  20:22:28.888  [main] DEBUG mao.t1.Server:  客户端已连接：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52683]
+2023-03-13  20:22:35.359  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52683]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  20:22:35.359  [main] DEBUG mao.t1.Server:  读取成功：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52683]
+2023-03-13  20:22:47.549  [main] DEBUG mao.t1.Server:  等待读：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52674]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-13  20:22:47.549  [main] DEBUG mao.t1.Server:  读取成功：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:52674]
+```
+
+
+
+
+
+
+
+#### 多路复用
+
+单线程可以配合 Selector 完成对多个 Channel 可读写事件的监控，这称之为多路复用
+
+* 多路复用仅针对网络 IO、普通文件 IO 没法利用多路复用
+* 如果不用 Selector 的非阻塞模式，线程大部分时间都在做无用功，而 Selector 能够保证
+  * 有可连接事件时才去连接
+  * 有可读事件才去读取
+  * 有可写事件才去写入
+    * 限于网络传输能力，Channel 未必时时可写，一旦 Channel 可写，会触发 Selector 的可写事件
+
+
+
+
+
+
+
+
+
+### Selector
+
