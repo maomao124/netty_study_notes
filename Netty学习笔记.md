@@ -4214,3 +4214,460 @@ cancel 会取消注册在 selector 上的 channel，并从 keys 集合中删除 
 
 #### 处理消息的边界
 
+如果客户端一次发送的消息过长，则会出现以下情况
+
+```java
+package mao.t4;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t4
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 21:55
+ * Version(版本): 1.0
+ * Description(描述)： 处理消息的边界
+ */
+
+public class Client
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t4.Client.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.connect(new InetSocketAddress("127.0.0.1", 8080));
+        Scanner input = new Scanner(System.in);
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("hellohellohellohellohellohello\nhellohellohellohellohello".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("88888888888888888888888889".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.close();
+    }
+}
+
+```
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-14  13:15:41.805  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:41.807  [main] DEBUG mao.t4.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
+2023-03-14  13:15:41.807  [main] DEBUG mao.t4.Server:  连接已注册到selector
+2023-03-14  13:15:45.156  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:45.157  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
+2023-03-14  13:15:45.161  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 68 |hellohellohelloh|
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 0a 68 |ellohellohello.h|
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 68 65 |ellohellohellohe|
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:45.166  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [8]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 6c 6c 6f 68 65 6c 6c 6f 6f 68 65 6c 6c 6f 68 65 |llohelloohellohe|
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:15:46.576  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:46.576  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 38 38 38 38 38 38 38 38 38 38 38 38 38 38 38 38 |8888888888888888|
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:15:46.576  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:15:46.577  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58367]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 38 38 38 38 38 38 38 38 38 39 38 38 38 38 38 38 |8888888889888888|
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+![image-20230314131256897](img/Netty学习笔记/image-20230314131256897.png)
+
+
+
+**解决思路：**
+
+* 一种思路是固定消息长度，数据包大小一样，服务器按预定长度读取，缺点是浪费带宽
+* 另一种思路是按分隔符拆分，缺点是效率低
+* TLV 格式，即 Type 类型、Length 长度、Value 数据，类型和长度已知的情况下，就可以方便获取消息大小，分配合适的 buffer，缺点是 buffer 需要提前分配，如果内容过大，则影响 server 吞吐量
+  * Http 1.1 是 TLV 格式
+  * Http 2.0 是 LTV 格式
+
+
+
+
+
+服务端：
+
+```java
+package mao.t4;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+import java.util.Set;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t4
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 21:54
+ * Version(版本): 1.0
+ * Description(描述)： 处理消息的边界
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t4.Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException, InterruptedException
+    {
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //设置成非阻塞模式
+        serverSocketChannel.configureBlocking(false);
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+
+        //Selector
+        Selector selector = Selector.open();
+        //注册，事件为OP_WRITE
+        SelectionKey selectionKey1 = serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+        selectionKey1.interestOps(SelectionKey.OP_ACCEPT);
+        log.debug("SelectionKey:" + selectionKey1);
+
+
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    serverSocketChannel.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                try
+                {
+                    selector.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+
+            }
+        }));
+
+        while (true)
+        {
+            int count = selector.select();
+            log.debug("事件总数：" + count);
+
+            //获取所有事件
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+
+            Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            while (iterator.hasNext())
+            {
+                //获得SelectionKey
+                SelectionKey selectionKey = iterator.next();
+                //判断事件类型
+
+                //连接服务器
+                if (selectionKey.isAcceptable())
+                {
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    //处理连接事件
+                    SocketChannel socketChannel = ssc.accept();
+                    log.debug("连接事件：" + socketChannel);
+                    //非阻塞
+                    socketChannel.configureBlocking(false);
+                    //注册，事件为OP_WRITE
+                    socketChannel.register(selector, SelectionKey.OP_READ);
+                    log.debug("连接已注册到selector");
+                }
+
+                //读事件
+                else if (selectionKey.isReadable())
+                {
+                    try
+                    {
+                        SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                        // 获取 selectionKey 上关联的附件
+                        ByteBuffer buffer = (ByteBuffer) selectionKey.attachment();
+                        if (buffer == null)
+                        {
+                            buffer = byteBuffer;
+                        }
+                        //处理读事件
+                        log.debug("读事件：" + socketChannel);
+                        int read = socketChannel.read(buffer);
+                        if (read == -1)
+                        {
+                            selectionKey.cancel();
+                            //socketChannel.close();
+                        }
+                        else
+                        {
+                            split(buffer);
+                            if (buffer.position() == buffer.limit())
+                            {
+                                //需要扩容
+                                ByteBuffer newByteBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
+                                buffer.flip();
+                                newByteBuffer.put(buffer);
+                                selectionKey.attach(newByteBuffer);
+                            }
+
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        e.printStackTrace();
+                        selectionKey.cancel();
+                    }
+                }
+
+                // 处理完毕，必须将事件移除
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void split(ByteBuffer source)
+    {
+        //切换到读模式
+        source.flip();
+        for (int i = 0; i < source.limit(); i++)
+        {
+            //找到一条完整消息
+            if (source.get(i) == '\n')
+            {
+                int length = i + 1 - source.position();
+                // 把这条完整消息存入新的 ByteBuffer
+                ByteBuffer target = ByteBuffer.allocate(length);
+                // 从 source 读，向 target 写
+                for (int j = 0; j < length; j++)
+                {
+                    target.put(source.get());
+                }
+                ByteBufferUtil.debugAll(target);
+            }
+        }
+        //切换到写模式，没读完的部分继续
+        source.compact();
+    }
+}
+```
+
+
+
+
+
+客户端：
+
+```java
+package mao.t4;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t4
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/13
+ * Time(创建时间)： 21:55
+ * Version(版本): 1.0
+ * Description(描述)： 处理消息的边界
+ */
+
+public class Client
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t4.Client.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.connect(new InetSocketAddress("127.0.0.1", 8080));
+        Scanner input = new Scanner(System.in);
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("hellohellohellohellohellohello\nhellohellohellohellohello".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("88888888888888888888888889\n".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.write(ByteBuffer.wrap("1234\n0000000\n".getBytes(StandardCharsets.UTF_8)));
+        input.nextLine();
+        socketChannel.close();
+    }
+}
+```
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-14  13:39:12.533  [main] DEBUG mao.t4.Server:  SelectionKey:channel=sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080], selector=sun.nio.ch.WindowsSelectorImpl@563f38c4, interestOps=16, readyOps=0
+2023-03-14  13:39:15.063  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:15.063  [main] DEBUG mao.t4.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
+2023-03-14  13:39:15.063  [main] DEBUG mao.t4.Server:  连接已注册到selector
+2023-03-14  13:39:21.462  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:21.462  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
+2023-03-14  13:39:21.463  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:21.463  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
+2023-03-14  13:39:21.467  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [31], limit: [31]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 68 |hellohellohelloh|
+|00000010| 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 0a    |ellohellohello. |
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:39:21.473  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:21.473  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
+2023-03-14  13:39:25.573  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:25.573  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
+2023-03-14  13:39:25.573  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:25.574  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
++--------+-------------------- all ------------------------+----------------+
+position: [52], limit: [52]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 68 65 6c 6c 6f 68 65 6c 6c 6f 68 |hellohellohelloh|
+|00000010| 65 6c 6c 6f 68 65 6c 6c 6f 38 38 38 38 38 38 38 |ellohello8888888|
+|00000020| 38 38 38 38 38 38 38 38 38 38 38 38 38 38 38 38 |8888888888888888|
+|00000030| 38 38 39 0a                                     |889.            |
++--------+-------------------------------------------------+----------------+
+2023-03-14  13:39:30.963  [main] DEBUG mao.t4.Server:  事件总数：1
+2023-03-14  13:39:30.963  [main] DEBUG mao.t4.Server:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58911]
++--------+-------------------- all ------------------------+----------------+
+position: [5], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 0a                                  |1234.           |
++--------+-------------------------------------------------+----------------+
++--------+-------------------- all ------------------------+----------------+
+position: [8], limit: [8]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 30 30 30 30 30 30 30 0a                         |0000000.        |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+
+
+#### ByteBuffer 大小分配
+
