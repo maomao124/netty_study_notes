@@ -4671,3 +4671,469 @@ position: [8], limit: [8]
 
 #### ByteBuffer 大小分配
 
+* 每个 channel 都需要记录可能被切分的消息，因为 ByteBuffer 不能被多个 channel 共同使用，因此需要为每个 channel 维护一个独立的 ByteBuffer
+* ByteBuffer 不能太大，比如一个 ByteBuffer 1Mb 的话，要支持百万连接就要 1Tb 内存，因此需要设计大小可变的 ByteBuffer
+  * 一种思路是首先分配一个较小的 buffer，例如 4k，如果发现数据不够，再分配 8k 的 buffer，将 4k buffer 内容拷贝至 8k buffer，优点是消息连续容易处理，缺点是数据拷贝耗费性能
+  * 另一种思路是用多个数组组成 buffer，一个数组不够，把多出来的内容写入新的数组，与前面的区别是消息存储不连续解析复杂，优点是避免了拷贝引起的性能损耗
+
+
+
+
+
+
+
+
+
+#### 处理 write 事件
+
+* 非阻塞模式下，无法保证把 buffer 中所有数据都写入 channel，因此需要追踪 write 方法的返回值（代表实际写入字节数）
+* 用 selector 监听所有 channel 的可写事件，每个 channel 都需要一个 key 来跟踪 buffer，但这样又会导致占用内存过多，就有两阶段策略
+  * 当消息处理器第一次写入消息时，才将 channel 注册到 selector 上
+  * selector 检查 channel 上的可写事件，如果所有的数据写完了，就取消 channel 的注册
+  * 如果不取消，会每次可写均会触发 write 事件
+
+
+
+
+
+服务端：
+
+```java
+package mao.t5;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.nio.charset.Charset;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t5
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 13:46
+ * Version(版本): 1.0
+ * Description(描述)： 处理 write 事件
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t5.Server.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException, InterruptedException
+    {
+        AtomicLong atomicLong = new AtomicLong(0);
+        ByteBuffer byteBuffer = ByteBuffer.allocate(16);
+        //创建服务器
+        ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+        //设置成非阻塞模式
+        serverSocketChannel.configureBlocking(false);
+        //绑定
+        serverSocketChannel.bind(new InetSocketAddress(8080));
+
+        //Selector
+        Selector selector = Selector.open();
+        //注册，事件为OP_WRITE
+        SelectionKey selectionKey1 = serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+        selectionKey1.interestOps(SelectionKey.OP_ACCEPT);
+        log.debug("SelectionKey:" + selectionKey1);
+
+
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    serverSocketChannel.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+                try
+                {
+                    selector.close();
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
+
+            }
+        }));
+
+        while (true)
+        {
+            int count = selector.select();
+            log.debug("事件总数：" + count);
+
+            //获取所有事件
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+
+            Iterator<SelectionKey> iterator = selectionKeys.iterator();
+            while (iterator.hasNext())
+            {
+                //获得SelectionKey
+                SelectionKey selectionKey = iterator.next();
+                //判断事件类型
+
+                //连接服务器
+                if (selectionKey.isAcceptable())
+                {
+                    ServerSocketChannel ssc = (ServerSocketChannel) selectionKey.channel();
+                    //处理连接事件
+                    SocketChannel socketChannel = ssc.accept();
+                    log.debug("连接事件：" + socketChannel);
+                    //非阻塞
+                    socketChannel.configureBlocking(false);
+                    //注册，事件为OP_WRITE
+                    SelectionKey selectionKey2 = socketChannel.register(selector, SelectionKey.OP_READ);
+                    log.debug("连接已注册到selector");
+                    StringBuilder stringBuilder = new StringBuilder();
+                    for (int i = 0; i < 10000000; i++)
+                    {
+                        stringBuilder.append("0");
+                    }
+                    ByteBuffer buffer = Charset.defaultCharset().encode(stringBuilder.toString());
+                    //写
+                    int write = socketChannel.write(buffer);
+                    log.debug("写入的字节数：" + write);
+                    atomicLong.set(write);
+                    //判断是否写完
+                    if (buffer.hasRemaining())
+                    {
+                        //没有一次写完
+                        //再关注写事件
+                        selectionKey2.interestOps(SelectionKey.OP_WRITE);
+                        //加入到附件
+                        selectionKey2.attach(buffer);
+                    }
+                }
+
+                //读事件
+                else if (selectionKey.isReadable())
+                {
+                    try
+                    {
+                        SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                        // 获取 selectionKey 上关联的附件
+                        ByteBuffer buffer = (ByteBuffer) selectionKey.attachment();
+                        if (buffer == null)
+                        {
+                            buffer = byteBuffer;
+                        }
+                        //处理读事件
+                        log.debug("读事件：" + socketChannel);
+                        int read = socketChannel.read(buffer);
+                        if (read == -1)
+                        {
+                            selectionKey.cancel();
+                            //socketChannel.close();
+                        }
+                        else
+                        {
+                            split(buffer);
+                            if (buffer.position() == buffer.limit())
+                            {
+                                //需要扩容
+                                ByteBuffer newByteBuffer = ByteBuffer.allocate(buffer.capacity() * 2);
+                                buffer.flip();
+                                newByteBuffer.put(buffer);
+                                selectionKey.attach(newByteBuffer);
+                            }
+
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        e.printStackTrace();
+                        selectionKey.cancel();
+                    }
+                }
+
+                //写事件
+                else if (selectionKey.isWritable())
+                {
+                    try
+                    {
+                        //取附件
+                        ByteBuffer buffer = (ByteBuffer) selectionKey.attachment();
+                        //SocketChannel
+                        SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                        //继续写
+                        log.debug("写事件：" + socketChannel);
+                        int write = socketChannel.write(buffer);
+                        log.debug("写入的字节数：" + write);
+                        atomicLong.getAndAdd(write);
+                        //判断是否读完
+                        if (!buffer.hasRemaining())
+                        {
+                            //写完了
+                            //取消关注写事件
+                            selectionKey.interestOps(SelectionKey.OP_READ);
+                            //加入到附件
+                            selectionKey.attach(null);
+                            log.debug("写完成，总字节数：" + atomicLong.get());
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        e.printStackTrace();
+                        selectionKey.cancel();
+                    }
+                }
+
+                // 处理完毕，必须将事件移除
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void split(ByteBuffer source)
+    {
+        //切换到读模式
+        source.flip();
+        for (int i = 0; i < source.limit(); i++)
+        {
+            //找到一条完整消息
+            if (source.get(i) == '\n')
+            {
+                int length = i + 1 - source.position();
+                // 把这条完整消息存入新的 ByteBuffer
+                ByteBuffer target = ByteBuffer.allocate(length);
+                // 从 source 读，向 target 写
+                for (int j = 0; j < length; j++)
+                {
+                    target.put(source.get());
+                }
+                ByteBufferUtil.debugAll(target);
+            }
+        }
+        //切换到写模式，没读完的部分继续
+        source.compact();
+    }
+}
+
+```
+
+
+
+
+
+客户端：
+
+```java
+package mao.t5;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t5
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 13:47
+ * Version(版本): 1.0
+ * Description(描述)： 处理 write 事件
+ */
+
+public class Client
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t5.Client.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        Selector selector = Selector.open();
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.configureBlocking(false);
+        socketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+        socketChannel.connect(new InetSocketAddress("localhost", 8080));
+        int count = 0;
+        while (true)
+        {
+            selector.select();
+            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+            while (iterator.hasNext())
+            {
+                SelectionKey selectionKey = iterator.next();
+                if (selectionKey.isConnectable())
+                {
+                    log.debug(String.valueOf(socketChannel.finishConnect()));
+                }
+                //可读
+                else if (selectionKey.isReadable())
+                {
+                    ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024);
+                    count += socketChannel.read(buffer);
+                    //ByteBufferUtil.debugAll(buffer);
+                    buffer.clear();
+                    log.info("已读完：" + count + "字节");
+                }
+                iterator.remove();
+            }
+        }
+    }
+}
+```
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-14  14:42:56.197  [main] DEBUG mao.t5.Server:  SelectionKey:channel=sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080], selector=sun.nio.ch.WindowsSelectorImpl@563f38c4, interestOps=16, readyOps=0
+2023-03-14  14:42:59.202  [main] DEBUG mao.t5.Server:  事件总数：1
+2023-03-14  14:42:59.203  [main] DEBUG mao.t5.Server:  连接事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58802]
+2023-03-14  14:42:59.203  [main] DEBUG mao.t5.Server:  连接已注册到selector
+2023-03-14  14:42:59.286  [main] DEBUG mao.t5.Server:  写入的字节数：3669988
+2023-03-14  14:42:59.289  [main] DEBUG mao.t5.Server:  事件总数：1
+2023-03-14  14:42:59.289  [main] DEBUG mao.t5.Server:  写事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58802]
+2023-03-14  14:42:59.291  [main] DEBUG mao.t5.Server:  写入的字节数：2490349
+2023-03-14  14:42:59.298  [main] DEBUG mao.t5.Server:  事件总数：1
+2023-03-14  14:42:59.298  [main] DEBUG mao.t5.Server:  写事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58802]
+2023-03-14  14:42:59.300  [main] DEBUG mao.t5.Server:  写入的字节数：3669988
+2023-03-14  14:42:59.303  [main] DEBUG mao.t5.Server:  事件总数：1
+2023-03-14  14:42:59.303  [main] DEBUG mao.t5.Server:  写事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:58802]
+2023-03-14  14:42:59.304  [main] DEBUG mao.t5.Server:  写入的字节数：169675
+2023-03-14  14:42:59.305  [main] DEBUG mao.t5.Server:  写完成，总字节数：10000000
+```
+
+
+
+客户端运行结果：
+
+```sh
+2023-03-14  14:42:59.204  [main] DEBUG mao.t5.Client:  true
+2023-03-14  14:42:59.285  [main] INFO  mao.t5.Client:  已读完：131071字节
+2023-03-14  14:42:59.285  [main] INFO  mao.t5.Client:  已读完：262142字节
+2023-03-14  14:42:59.286  [main] INFO  mao.t5.Client:  已读完：393213字节
+2023-03-14  14:42:59.286  [main] INFO  mao.t5.Client:  已读完：524284字节
+2023-03-14  14:42:59.286  [main] INFO  mao.t5.Client:  已读完：655355字节
+2023-03-14  14:42:59.287  [main] INFO  mao.t5.Client:  已读完：786426字节
+2023-03-14  14:42:59.287  [main] INFO  mao.t5.Client:  已读完：917497字节
+2023-03-14  14:42:59.287  [main] INFO  mao.t5.Client:  已读完：1048568字节
+2023-03-14  14:42:59.288  [main] INFO  mao.t5.Client:  已读完：1179639字节
+2023-03-14  14:42:59.289  [main] INFO  mao.t5.Client:  已读完：1310710字节
+2023-03-14  14:42:59.289  [main] INFO  mao.t5.Client:  已读完：1441781字节
+2023-03-14  14:42:59.290  [main] INFO  mao.t5.Client:  已读完：1572852字节
+2023-03-14  14:42:59.290  [main] INFO  mao.t5.Client:  已读完：1703923字节
+2023-03-14  14:42:59.291  [main] INFO  mao.t5.Client:  已读完：1834994字节
+2023-03-14  14:42:59.292  [main] INFO  mao.t5.Client:  已读完：1966065字节
+2023-03-14  14:42:59.292  [main] INFO  mao.t5.Client:  已读完：2097136字节
+2023-03-14  14:42:59.296  [main] INFO  mao.t5.Client:  已读完：2228207字节
+2023-03-14  14:42:59.296  [main] INFO  mao.t5.Client:  已读完：2359278字节
+2023-03-14  14:42:59.296  [main] INFO  mao.t5.Client:  已读完：2490349字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：2621420字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：2752491字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：2883562字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：3014633字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：3145704字节
+2023-03-14  14:42:59.297  [main] INFO  mao.t5.Client:  已读完：3276775字节
+2023-03-14  14:42:59.298  [main] INFO  mao.t5.Client:  已读完：3407846字节
+2023-03-14  14:42:59.298  [main] INFO  mao.t5.Client:  已读完：3538917字节
+2023-03-14  14:42:59.299  [main] INFO  mao.t5.Client:  已读完：3669988字节
+2023-03-14  14:42:59.299  [main] INFO  mao.t5.Client:  已读完：3801059字节
+2023-03-14  14:42:59.299  [main] INFO  mao.t5.Client:  已读完：3932130字节
+2023-03-14  14:42:59.299  [main] INFO  mao.t5.Client:  已读完：4063201字节
+2023-03-14  14:42:59.300  [main] INFO  mao.t5.Client:  已读完：4194272字节
+2023-03-14  14:42:59.300  [main] INFO  mao.t5.Client:  已读完：4325343字节
+2023-03-14  14:42:59.300  [main] INFO  mao.t5.Client:  已读完：4456414字节
+2023-03-14  14:42:59.301  [main] INFO  mao.t5.Client:  已读完：4587485字节
+2023-03-14  14:42:59.301  [main] INFO  mao.t5.Client:  已读完：4718556字节
+2023-03-14  14:42:59.301  [main] INFO  mao.t5.Client:  已读完：4849627字节
+2023-03-14  14:42:59.301  [main] INFO  mao.t5.Client:  已读完：4980698字节
+2023-03-14  14:42:59.302  [main] INFO  mao.t5.Client:  已读完：5111769字节
+2023-03-14  14:42:59.302  [main] INFO  mao.t5.Client:  已读完：5242840字节
+2023-03-14  14:42:59.302  [main] INFO  mao.t5.Client:  已读完：5373911字节
+2023-03-14  14:42:59.304  [main] INFO  mao.t5.Client:  已读完：5504982字节
+2023-03-14  14:42:59.304  [main] INFO  mao.t5.Client:  已读完：5636053字节
+2023-03-14  14:42:59.304  [main] INFO  mao.t5.Client:  已读完：5767124字节
+2023-03-14  14:42:59.304  [main] INFO  mao.t5.Client:  已读完：5898195字节
+2023-03-14  14:42:59.304  [main] INFO  mao.t5.Client:  已读完：6029266字节
+2023-03-14  14:42:59.305  [main] INFO  mao.t5.Client:  已读完：6160337字节
+2023-03-14  14:42:59.306  [main] INFO  mao.t5.Client:  已读完：6291408字节
+2023-03-14  14:42:59.306  [main] INFO  mao.t5.Client:  已读完：6422479字节
+2023-03-14  14:42:59.307  [main] INFO  mao.t5.Client:  已读完：6553550字节
+2023-03-14  14:42:59.308  [main] INFO  mao.t5.Client:  已读完：6684621字节
+2023-03-14  14:42:59.308  [main] INFO  mao.t5.Client:  已读完：6815692字节
+2023-03-14  14:42:59.309  [main] INFO  mao.t5.Client:  已读完：6946763字节
+2023-03-14  14:42:59.310  [main] INFO  mao.t5.Client:  已读完：7077834字节
+2023-03-14  14:42:59.311  [main] INFO  mao.t5.Client:  已读完：7208905字节
+2023-03-14  14:42:59.311  [main] INFO  mao.t5.Client:  已读完：7339976字节
+2023-03-14  14:42:59.312  [main] INFO  mao.t5.Client:  已读完：7471047字节
+2023-03-14  14:42:59.313  [main] INFO  mao.t5.Client:  已读完：7602118字节
+2023-03-14  14:42:59.313  [main] INFO  mao.t5.Client:  已读完：7733189字节
+2023-03-14  14:42:59.314  [main] INFO  mao.t5.Client:  已读完：7864260字节
+2023-03-14  14:42:59.314  [main] INFO  mao.t5.Client:  已读完：7995331字节
+2023-03-14  14:42:59.315  [main] INFO  mao.t5.Client:  已读完：8126402字节
+2023-03-14  14:42:59.316  [main] INFO  mao.t5.Client:  已读完：8257473字节
+2023-03-14  14:42:59.316  [main] INFO  mao.t5.Client:  已读完：8388544字节
+2023-03-14  14:42:59.317  [main] INFO  mao.t5.Client:  已读完：8519615字节
+2023-03-14  14:42:59.317  [main] INFO  mao.t5.Client:  已读完：8650686字节
+2023-03-14  14:42:59.318  [main] INFO  mao.t5.Client:  已读完：8781757字节
+2023-03-14  14:42:59.318  [main] INFO  mao.t5.Client:  已读完：8912828字节
+2023-03-14  14:42:59.319  [main] INFO  mao.t5.Client:  已读完：9043899字节
+2023-03-14  14:42:59.319  [main] INFO  mao.t5.Client:  已读完：9174970字节
+2023-03-14  14:42:59.320  [main] INFO  mao.t5.Client:  已读完：9306041字节
+2023-03-14  14:42:59.320  [main] INFO  mao.t5.Client:  已读完：9437112字节
+2023-03-14  14:42:59.321  [main] INFO  mao.t5.Client:  已读完：9568183字节
+2023-03-14  14:42:59.321  [main] INFO  mao.t5.Client:  已读完：9699254字节
+2023-03-14  14:42:59.322  [main] INFO  mao.t5.Client:  已读完：9830325字节
+2023-03-14  14:42:59.322  [main] INFO  mao.t5.Client:  已读完：9961396字节
+2023-03-14  14:42:59.323  [main] INFO  mao.t5.Client:  已读完：10000000字节
+```
+
+
+
+
+
+
+
+
+
+### 多线程优化
+
