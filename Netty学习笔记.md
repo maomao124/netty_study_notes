@@ -5137,3 +5137,547 @@ public class Client
 
 ### 多线程优化
 
+现在都是多核 cpu，设计时要充分考虑别让 cpu 的力量被白白浪费
+
+* 单线程配一个选择器，专门处理 accept 事件
+* 创建 cpu 核心数的线程，每个线程配一个选择器，轮流处理 read 事件
+
+
+
+```java
+package mao.t6;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t6
+ * Class(类名): AcceptHandler
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 22:23
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class AcceptHandler implements Runnable
+{
+
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(AcceptHandler.class);
+
+    /**
+     * 选择器
+     */
+    private Selector selector;
+
+    /**
+     * 工人处理程序
+     */
+    private WorkerHandler[] workerHandlers;
+
+    /**
+     * 是否已经注册
+     */
+    private volatile boolean isRegister = false;
+
+    /**
+     * 原子Long，cas方式累加
+     */
+    private final AtomicLong atomicLong = new AtomicLong(0);
+
+    /**
+     * 注册
+     *
+     * @param port 端口号
+     * @throws IOException ioexception
+     */
+    public void register(int port) throws IOException
+    {
+        //判断是否已经注册过
+        if (!isRegister)
+        {
+            //还没有注册过
+            ServerSocketChannel serverSocketChannel = ServerSocketChannel.open();
+            //绑定端口
+            serverSocketChannel.bind(new InetSocketAddress(port));
+            //非阻塞
+            serverSocketChannel.configureBlocking(false);
+            //创建Selector
+            selector = Selector.open();
+            //注册到Selector
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+            //创建WorkerHandler
+            workerHandlers = initWorkerHandlers();
+            log.debug("服务启动");
+            new Thread(this, "Accept").start();
+            isRegister = true;
+        }
+    }
+
+    public WorkerHandler[] initWorkerHandlers()
+    {
+        int processors = Runtime.getRuntime().availableProcessors();
+        log.debug("线程数量：" + processors);
+        WorkerHandler[] workerHandlers = new WorkerHandler[processors];
+        for (int i = 0; i < processors; i++)
+        {
+            log.debug("初始化WorkerHandler" + i);
+            workerHandlers[i] = new WorkerHandler(i);
+        }
+        return workerHandlers;
+    }
+
+    @Override
+    public void run()
+    {
+        while (true)
+        {
+            try
+            {
+                int select = selector.select();
+                //iterator
+                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                while (iterator.hasNext())
+                {
+                    //得到selectionKey
+                    SelectionKey selectionKey = iterator.next();
+
+                    //连接事件
+                    if (selectionKey.isAcceptable())
+                    {
+                        try
+                        {
+                            //得到ServerSocketChannel
+                            ServerSocketChannel serverSocketChannel = (ServerSocketChannel) selectionKey.channel();
+                            log.debug("注册事件：" + serverSocketChannel);
+                            //得到SocketChannel
+                            SocketChannel socketChannel = serverSocketChannel.accept();
+                            //非阻塞
+                            socketChannel.configureBlocking(false);
+                            //轮询负载均衡注册到每个workerHandler
+                            workerHandlers[Math.toIntExact((atomicLong.getAndIncrement() %
+                                    workerHandlers.length))].register(socketChannel);
+                        }
+                        catch (Exception e)
+                        {
+                            selectionKey.cancel();
+                        }
+                    }
+                    //移除
+                    iterator.remove();
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+```java
+package mao.t6;
+
+import mao.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t6
+ * Class(类名): WorkerHandler
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 22:25
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class WorkerHandler implements Runnable
+{
+
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(WorkerHandler.class);
+
+    /**
+     * 索引
+     */
+    private final int index;
+
+    /**
+     * 选择器
+     */
+    private Selector selector;
+
+    /**
+     * 线程安全的任务队列
+     */
+    private final ConcurrentLinkedQueue<Runnable> tasks = new ConcurrentLinkedQueue<>();
+
+    /**
+     * 是否已经注册
+     */
+    private volatile boolean isRegister = false;
+
+    /**
+     * 构造方法
+     *
+     * @param index 索引
+     */
+    public WorkerHandler(int index)
+    {
+        this.index = index;
+    }
+
+
+    /**
+     * 注册
+     *
+     * @param socketChannel 套接字通道
+     */
+    public void register(SocketChannel socketChannel) throws IOException
+    {
+        //判断是否已经注册过
+        if (!isRegister)
+        {
+            //创建selector
+            selector = Selector.open();
+            //开启线程
+            new Thread(this, "Worker-" + index).start();
+            log.debug("启动工作线程：Worker-" + index + " ,监听读事件");
+            isRegister = true;
+        }
+        //添加一个任务到队列
+        tasks.add(() ->
+        {
+            try
+            {
+                //注册
+                SelectionKey selectionKey = socketChannel.register(selector, SelectionKey.OP_READ);
+                selector.selectNow();
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
+        });
+        //唤醒阻塞的selector
+        selector.wakeup();
+    }
+
+    @Override
+    public void run()
+    {
+        while (true)
+        {
+            try
+            {
+                selector.select();
+                //取得任务，非阻塞取
+                Runnable runnable = tasks.poll();
+                //判断是否为空
+                if (runnable != null)
+                {
+                    //直接调用run方法，不启动新线程
+                    runnable.run();
+                }
+                Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+                while (iterator.hasNext())
+                {
+                    SelectionKey selectionKey = iterator.next();
+                    //读事件
+                    if (selectionKey.isReadable())
+                    {
+                        try
+                        {
+                            SocketChannel socketChannel = (SocketChannel) selectionKey.channel();
+                            log.debug("读事件：" + socketChannel);
+                            ByteBuffer buffer = ByteBuffer.allocate(32);
+                            int read = socketChannel.read(buffer);
+                            if (read == -1)
+                            {
+                                selectionKey.cancel();
+                                socketChannel.close();
+                            }
+                            else
+                            {
+                                //切换到读模式
+                                buffer.flip();
+                                ByteBufferUtil.debugAll(buffer);
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            e.printStackTrace();
+                            selectionKey.cancel();
+                        }
+
+                    }
+                    //移除
+                    iterator.remove();
+                }
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+```java
+package mao.t6;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t6
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 22:22
+ * Version(版本): 1.0
+ * Description(描述)： 多线程优化
+ */
+
+public class Server
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(Server.class);
+
+    public static void main(String[] args) throws IOException
+    {
+        AcceptHandler acceptHandler = new AcceptHandler();
+        acceptHandler.register(8080);
+    }
+}
+```
+
+
+
+
+
+```java
+package mao.t6;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Net_Programming
+ * Package(包名): mao.t6
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/14
+ * Time(创建时间)： 23:14
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class Client
+{
+    /**
+     * 日志
+     */
+    private static final Logger log = LoggerFactory.getLogger(mao.t6.Client.class);
+
+    /**
+     * main方法
+     *
+     * @param args 参数
+     */
+    public static void main(String[] args) throws IOException
+    {
+        while (true)
+        {
+            try
+            {
+                SocketChannel socketChannel = SocketChannel.open();
+                socketChannel.connect(new InetSocketAddress("127.0.0.1", 8080));
+                Scanner input = new Scanner(System.in);
+                input.nextLine();
+                socketChannel.write(ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8)));
+                input.nextLine();
+                socketChannel.write(ByteBuffer.wrap("world".getBytes(StandardCharsets.UTF_8)));
+                input.nextLine();
+                socketChannel.close();
+            }
+            catch (Exception e)
+            {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-15  13:32:41.190  [main] DEBUG mao.t6.AcceptHandler:  线程数量：32
+2023-03-15  13:32:41.191  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler0
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler1
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler2
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler3
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler4
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler5
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler6
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler7
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler8
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler9
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler10
+2023-03-15  13:32:41.192  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler11
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler12
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler13
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler14
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler15
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler16
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler17
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler18
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler19
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler20
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler21
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler22
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler23
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler24
+2023-03-15  13:32:41.193  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler25
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler26
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler27
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler28
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler29
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler30
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  初始化WorkerHandler31
+2023-03-15  13:32:41.194  [main] DEBUG mao.t6.AcceptHandler:  服务启动
+2023-03-15  13:32:47.588  [Accept] DEBUG mao.t6.AcceptHandler:  注册事件：sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080]
+2023-03-15  13:32:47.590  [Accept] DEBUG mao.t6.WorkerHandler:  启动工作线程：Worker-0 ,监听读事件
+2023-03-15  13:33:13.363  [Worker-0] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51773]
+2023-03-15  13:33:13.367  [Worker-0] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [10]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 77 6f 72 6c 64 00 00 00 00 00 00 |helloworld......|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-15  13:33:27.341  [Worker-0] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51773]
+2023-03-15  13:33:27.341  [Accept] DEBUG mao.t6.AcceptHandler:  注册事件：sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080]
+2023-03-15  13:33:27.343  [Accept] DEBUG mao.t6.WorkerHandler:  启动工作线程：Worker-1 ,监听读事件
+2023-03-15  13:33:44.701  [Worker-1] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51784]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-15  13:33:51.335  [Worker-1] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51784]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 77 6f 72 6c 64 00 00 00 00 00 00 00 00 00 00 00 |world...........|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-15  13:34:09.064  [Worker-1] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51784]
+2023-03-15  13:34:09.064  [Accept] DEBUG mao.t6.AcceptHandler:  注册事件：sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080]
+2023-03-15  13:34:09.066  [Accept] DEBUG mao.t6.WorkerHandler:  启动工作线程：Worker-2 ,监听读事件
+2023-03-15  13:34:17.957  [Worker-2] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51796]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-15  13:34:29.808  [Worker-2] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51796]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 77 6f 72 6c 64 00 00 00 00 00 00 00 00 00 00 00 |world...........|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-15  13:34:30.388  [Worker-2] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51796]
+2023-03-15  13:34:30.389  [Accept] DEBUG mao.t6.AcceptHandler:  注册事件：sun.nio.ch.ServerSocketChannelImpl[/[0:0:0:0:0:0:0:0]:8080]
+2023-03-15  13:34:30.391  [Accept] DEBUG mao.t6.WorkerHandler:  启动工作线程：Worker-3 ,监听读事件
+2023-03-15  13:34:56.666  [Worker-3] DEBUG mao.t6.WorkerHandler:  读事件：java.nio.channels.SocketChannel[connected local=/127.0.0.1:8080 remote=/127.0.0.1:51799]
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [5]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
+|00000010| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+
+
+### UDP
+
