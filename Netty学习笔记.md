@@ -5983,7 +5983,558 @@ java 可以使用 DirectByteBuf 将堆外内存映射到 jvm 内存中来直接�
 
 
 
-## AIO
+# AIO
+
+AIO 用来解决数据复制阶段的阻塞问题
+
+* 同步意味着，在进行读写操作时，线程需要等待结果，还是相当于闲置
+* 异步意味着，在进行读写操作时，线程不必等待结果，而是将来由操作系统来通过回调方式由另外的线程来获得结果
 
 
+
+异步模型需要底层操作系统（Kernel）提供支持
+
+* Windows 系统通过 IOCP 实现了真正的异步 IO
+* Linux 系统异步 IO 在 2.6 版本引入，但其底层实现还是用多路复用模拟了异步 IO，性能没有优势
+
+
+
+
+
+## 文件 AIO
+
+默认文件 AIO 使用的线程都是守护线程
+
+```java
+package mao.t1;
+
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import mao.utils.ByteBufferUtil;
+
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t1
+ * Class(类名): FileAIO
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 21:24
+ * Version(版本): 1.0
+ * Description(描述)： 文件AIO
+ */
+
+@Slf4j
+public class FileAIO
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        try
+        {
+            log.debug("开始读取...");
+            AsynchronousFileChannel asynchronousFileChannel =
+                    AsynchronousFileChannel.open(Paths.get("test.txt"), StandardOpenOption.READ);
+            ByteBuffer buffer = ByteBuffer.allocate(16);
+            asynchronousFileChannel.read(buffer, 0, null, new CompletionHandler<Integer, ByteBuffer>()
+            {
+                @Override
+                public void completed(Integer result, ByteBuffer attachment)
+                {
+                    log.debug("读取完成：" + result);
+                    buffer.flip();
+                    ByteBufferUtil.debugAll(buffer);
+                }
+
+                @Override
+                public void failed(Throwable exc, ByteBuffer attachment)
+                {
+                    log.warn("读取失败：", exc);
+                }
+            });
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+        Thread.sleep(1000);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-16  21:36:19.104  [main] DEBUG mao.t1.FileAIO:  开始读取...
+2023-03-16  21:36:19.114  [Thread-33] DEBUG mao.t1.FileAIO:  读取完成：8
+2023-03-16  21:36:19.116  [Thread-33] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [0], limit: [8]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35 36 0d 0a 00 00 00 00 00 00 00 00 |123456..........|
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+## 网络 AIO
+
+ReadHandler
+
+```java
+package mao.t2;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.charset.Charset;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t2
+ * Class(类名): ReadHandler
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 21:40
+ * Version(版本): 1.0
+ * Description(描述)： 读事件处理器
+ */
+
+@Slf4j
+public class ReadHandler implements CompletionHandler<Integer, ByteBuffer>
+{
+
+    /**
+     * 异步套接字通道
+     */
+    private final AsynchronousSocketChannel asynchronousSocketChannel;
+
+    /**
+     * 读事件处理器构造方法
+     *
+     * @param asynchronousSocketChannel 异步套接字通道
+     */
+    public ReadHandler(AsynchronousSocketChannel asynchronousSocketChannel)
+    {
+        this.asynchronousSocketChannel = asynchronousSocketChannel;
+    }
+
+    @Override
+    public void completed(Integer result, ByteBuffer attachment)
+    {
+        try
+        {
+            if (result == -1)
+            {
+                //已读完
+                log.debug("读事件处理完成，关闭通道：" + asynchronousSocketChannel);
+                asynchronousSocketChannel.close();
+            }
+            log.debug("读事件：" + asynchronousSocketChannel);
+            attachment.flip();
+            CharBuffer charBuffer = Charset.defaultCharset().decode(attachment);
+            log.debug(charBuffer.toString());
+            attachment.clear();
+            //处理完第一个 read 时，需要再次调用 read 方法来处理下一个 read 事件
+            asynchronousSocketChannel.read(attachment, attachment, this);
+        }
+        catch (Exception e)
+        {
+            log.warn("读取时出现异常：", e);
+        }
+    }
+
+    @Override
+    public void failed(Throwable exc, ByteBuffer attachment)
+    {
+        log.error("读取失败：", exc);
+        try
+        {
+            asynchronousSocketChannel.close();
+        }
+        catch (IOException ignored)
+        {
+        }
+    }
+}
+```
+
+
+
+
+
+WriteHandler
+
+```java
+package mao.t2;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.charset.Charset;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t2
+ * Class(类名): WriteHandler
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 21:40
+ * Version(版本): 1.0
+ * Description(描述)： 写事件处理器
+ */
+
+@Slf4j
+public class WriteHandler implements CompletionHandler<Integer, ByteBuffer>
+{
+
+    /**
+     * 异步套接字通道
+     */
+    private final AsynchronousSocketChannel asynchronousSocketChannel;
+
+    /**
+     * 写事件处理器构造方法
+     *
+     * @param asynchronousSocketChannel 异步套接字通道
+     */
+    public WriteHandler(AsynchronousSocketChannel asynchronousSocketChannel)
+    {
+        this.asynchronousSocketChannel = asynchronousSocketChannel;
+    }
+
+
+    @Override
+    public void completed(Integer result, ByteBuffer attachment)
+    {
+        log.debug("写事件");
+        if (attachment.hasRemaining())
+        {
+            //如果有剩余内容,继续写
+            asynchronousSocketChannel.write(attachment);
+        }
+    }
+
+    @Override
+    public void failed(Throwable exc, ByteBuffer attachment)
+    {
+        log.error("写错误：", exc);
+    }
+}
+```
+
+
+
+
+
+AcceptHandler
+
+```java
+package mao.t2;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousServerSocketChannel;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.charset.Charset;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t2
+ * Class(类名): AcceptHandler
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 21:40
+ * Version(版本): 1.0
+ * Description(描述)： 接收事件处理器
+ */
+
+@Slf4j
+public class AcceptHandler implements CompletionHandler<AsynchronousSocketChannel, Object>
+{
+    /**
+     * 异步服务器套接字通道
+     */
+    private final AsynchronousServerSocketChannel asynchronousServerSocketChannel;
+
+    /**
+     * 接收事件处理器构造方法
+     *
+     * @param asynchronousServerSocketChannel 异步服务器套接字通道
+     */
+    public AcceptHandler(AsynchronousServerSocketChannel asynchronousServerSocketChannel)
+    {
+        this.asynchronousServerSocketChannel = asynchronousServerSocketChannel;
+    }
+
+
+    @Override
+    public void completed(AsynchronousSocketChannel result, Object attachment)
+    {
+        try
+        {
+            log.debug("接收事件：" + asynchronousServerSocketChannel.toString());
+            ByteBuffer buffer = ByteBuffer.allocate(16);
+            //读事件
+            result.read(buffer, buffer, new ReadHandler(result));
+            //写事件
+            result.write(Charset.defaultCharset().encode("hello"),
+                    ByteBuffer.allocate(16), new WriteHandler(result));
+            //处理完第一个 accept事件时，需要再次调用 accept 方法来处理下一个 accept 事件
+            asynchronousServerSocketChannel.accept(null, this);
+        }
+        catch (Exception e)
+        {
+            log.warn("处理接收事件时出现异常：" + e);
+        }
+    }
+
+    @Override
+    public void failed(Throwable exc, Object attachment)
+    {
+        log.error("接收异常：" + exc);
+    }
+}
+```
+
+
+
+
+
+AioServer
+
+```java
+package mao.t2;
+
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+import java.nio.channels.AsynchronousServerSocketChannel;
+import java.util.concurrent.locks.LockSupport;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t2
+ * Class(类名): AioServer
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 21:39
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+@Slf4j
+public class AioServer
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        AsynchronousServerSocketChannel asynchronousServerSocketChannel = AsynchronousServerSocketChannel.open();
+        asynchronousServerSocketChannel.bind(new InetSocketAddress(8080));
+        asynchronousServerSocketChannel.accept(null, new AcceptHandler(asynchronousServerSocketChannel));
+        log.debug("注册服务");
+
+        //因为是异步，所以要阻塞
+        LockSupport.park();
+    }
+}
+```
+
+
+
+
+
+Client
+
+```java
+package mao.t2;
+
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+import mao.utils.ByteBufferUtil;
+
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
+import java.util.Iterator;
+
+/**
+ * Project name(项目名称)：Netty_AIO
+ * Package(包名): mao.t2
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/16
+ * Time(创建时间)： 22:05
+ * Version(版本): 1.0
+ * Description(描述)： 客户端
+ */
+
+@Slf4j
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        Selector selector = Selector.open();
+        SocketChannel socketChannel = SocketChannel.open();
+        socketChannel.configureBlocking(false);
+        socketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+        socketChannel.connect(new InetSocketAddress("localhost", 8080));
+        new Thread(new Runnable()
+        {
+            @SneakyThrows
+            @Override
+            public void run()
+            {
+                while (true)
+                {
+                    log.debug("客户端写数据");
+                    socketChannel.write(Charset.defaultCharset().encode("hello server!"));
+                    Thread.sleep(2000);
+                }
+            }
+        }).start();
+
+        int count = 0;
+        while (true)
+        {
+            selector.select();
+            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+            while (iterator.hasNext())
+            {
+                SelectionKey selectionKey = iterator.next();
+                if (selectionKey.isConnectable())
+                {
+                    log.debug(String.valueOf(socketChannel.finishConnect()));
+                }
+                //可读
+                else if (selectionKey.isReadable())
+                {
+                    log.debug("客户端读事件");
+                    ByteBuffer buffer = ByteBuffer.allocate(16);
+                    count += socketChannel.read(buffer);
+                    ByteBufferUtil.debugAll(buffer);
+                    buffer.clear();
+                }
+                iterator.remove();
+            }
+        }
+    }
+}
+```
+
+
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-16  22:17:33.929  [main] DEBUG mao.t2.AioServer:  注册服务
+2023-03-16  22:17:38.058  [Thread-34] DEBUG mao.t2.AcceptHandler:  接收事件：sun.nio.ch.WindowsAsynchronousServerSocketChannelImpl[/0:0:0:0:0:0:0:0:8080]
+2023-03-16  22:17:38.060  [Thread-33] DEBUG mao.t2.WriteHandler:  写事件
+2023-03-16  22:17:38.061  [Thread-32] DEBUG mao.t2.ReadHandler:  读事件：sun.nio.ch.WindowsAsynchronousSocketChannelImpl[connected local=/127.0.0.1:8080 remote=/127.0.0.1:49998]
+2023-03-16  22:17:38.061  [Thread-32] DEBUG mao.t2.ReadHandler:  hello server!
+2023-03-16  22:17:40.074  [Thread-32] DEBUG mao.t2.ReadHandler:  读事件：sun.nio.ch.WindowsAsynchronousSocketChannelImpl[connected local=/127.0.0.1:8080 remote=/127.0.0.1:49998]
+2023-03-16  22:17:40.074  [Thread-32] DEBUG mao.t2.ReadHandler:  hello server!
+2023-03-16  22:17:42.089  [Thread-32] DEBUG mao.t2.ReadHandler:  读事件：sun.nio.ch.WindowsAsynchronousSocketChannelImpl[connected local=/127.0.0.1:8080 remote=/127.0.0.1:49998]
+2023-03-16  22:17:42.089  [Thread-32] DEBUG mao.t2.ReadHandler:  hello server!
+2023-03-16  22:17:44.093  [Thread-32] DEBUG mao.t2.ReadHandler:  读事件：sun.nio.ch.WindowsAsynchronousSocketChannelImpl[connected local=/127.0.0.1:8080 remote=/127.0.0.1:49998]
+2023-03-16  22:17:44.093  [Thread-32] DEBUG mao.t2.ReadHandler:  hello server!
+2023-03-16  22:17:46.106  [Thread-32] DEBUG mao.t2.ReadHandler:  读事件：sun.nio.ch.WindowsAsynchronousSocketChannelImpl[connected local=/127.0.0.1:8080 remote=/127.0.0.1:49998]
+2023-03-16  22:17:46.106  [Thread-32] DEBUG mao.t2.ReadHandler:  hello server!
+```
+
+
+
+
+
+客户端运行结果：
+
+```sh
+2023-03-16  22:17:38.059  [Thread-1] DEBUG mao.t2.Client:  客户端写数据
+2023-03-16  22:17:38.059  [main] DEBUG mao.t2.Client:  true
+2023-03-16  22:17:38.061  [main] DEBUG mao.t2.Client:  客户端读事件
+2023-03-16  22:17:38.064  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
++--------+-------------------- all ------------------------+----------------+
+position: [16], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 00 00 00 00 00 00 00 00 00 00 00 |hello...........|
++--------+-------------------------------------------------+----------------+
+2023-03-16  22:17:38.069  [main] DEBUG mao.t2.Client:  客户端读事件
++--------+-------------------- all ------------------------+----------------+
+position: [5], limit: [16]
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 |................|
++--------+-------------------------------------------------+----------------+
+2023-03-16  22:17:40.074  [Thread-1] DEBUG mao.t2.Client:  客户端写数据
+2023-03-16  22:17:42.089  [Thread-1] DEBUG mao.t2.Client:  客户端写数据
+2023-03-16  22:17:44.093  [Thread-1] DEBUG mao.t2.Client:  客户端写数据
+2023-03-16  22:17:46.106  [Thread-1] DEBUG mao.t2.Client:  客户端写数据
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Netty概述
+
+## Netty 是什么？
 
