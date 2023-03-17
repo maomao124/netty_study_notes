@@ -6580,9 +6580,9 @@ Netty 在 Java 网络应用框架中的地位就好比：Spring 框架在 JavaEE
 
 
 
-## Netty入门
+# Netty入门
 
-### 目标
+## 目标
 
 开发一个简单的服务器端和客户端
 
@@ -6593,7 +6593,7 @@ Netty 在 Java 网络应用框架中的地位就好比：Spring 框架在 JavaEE
 
 
 
-### maven依赖
+## maven依赖
 
 ```xml
 <!--netty-->
@@ -6608,7 +6608,7 @@ Netty 在 Java 网络应用框架中的地位就好比：Spring 框架在 JavaEE
 
 
 
-### 服务器端
+## 服务器端
 
 ```java
 package mao.t1;
@@ -6692,7 +6692,7 @@ public class Server
 
 
 
-### 客户端
+## 客户端
 
 ```java
 package mao.t1;
@@ -6905,5 +6905,234 @@ java.lang.IllegalAccessException: class io.netty.util.internal.PlatformDependent
 
 
 
-### 总结
+## 总结
+
+* 把 channel 理解为数据的通道
+* 把 msg 理解为流动的数据，最开始输入是 ByteBuf，但经过 pipeline 的加工，会变成其它类型对象，最后输出又变成 ByteBuf
+* 把 handler 理解为数据的处理工序
+  * 工序有多道，合在一起就是 pipeline，pipeline 负责发布事件（读、读取完成...）传播给每个 handler， handler 对自己感兴趣的事件进行处理（重写了相应事件处理方法）
+  * handler 分 Inbound 和 Outbound 两类
+* 把 eventLoop 理解为处理数据的工人
+  * 工人可以管理多个 channel 的 io 操作，并且一旦工人负责了某个 channel，就要负责到底（绑定）
+  * 工人既可以执行 io 操作，也可以进行任务处理，每位工人有任务队列，队列里可以堆放多个 channel 的待处理任务，任务分为普通任务、定时任务
+  * 工人按照 pipeline 顺序，依次按照 handler 的规划（代码）处理数据，可以为每道工序指定不同的工人
+
+
+
+
+
+
+
+
+
+
+
+# Netty组件
+
+## EventLoop
+
+**事件循环对象**
+
+EventLoop 本质是一个单线程执行器（同时维护了一个 Selector），里面有 run 方法处理 Channel 上源源不断的 io 事件。
+
+它的继承关系比较复杂
+
+* 一条线是继承自 j.u.c.ScheduledExecutorService 因此包含了线程池中所有的方法
+* 另一条线是继承自 netty 自己的 OrderedEventExecutor，
+  * 提供了 boolean inEventLoop(Thread thread) 方法判断一个线程是否属于此 EventLoop
+  * 提供了 parent 方法来看看自己属于哪个 EventLoopGroup
+
+
+
+![image-20230317235126857](img/Netty学习笔记/image-20230317235126857.png)
+
+
+
+![image-20230317235136276](img/Netty学习笔记/image-20230317235136276.png)
+
+
+
+![image-20230317235242949](img/Netty学习笔记/image-20230317235242949.png)
+
+
+
+![image-20230317235349870](img/Netty学习笔记/image-20230317235349870.png)
+
+
+
+![image-20230317235359042](img/Netty学习笔记/image-20230317235359042.png)
+
+
+
+![image-20230317235406745](img/Netty学习笔记/image-20230317235406745.png)
+
+
+
+![image-20230317235424490](img/Netty学习笔记/image-20230317235424490.png)
+
+
+
+
+
+**事件循环组**
+
+EventLoopGroup 是一组 EventLoop，Channel 一般会调用 EventLoopGroup 的 register 方法来绑定其中一个 EventLoop，后续这个 Channel 上的 io 事件都由此 EventLoop 来处理（保证了 io 事件处理时的线程安全）
+
+* 继承自 netty 自己的 EventExecutorGroup
+  * 实现了 Iterable 接口提供遍历 EventLoop 的能力
+  * 另有 next 方法获取集合中下一个 EventLoop
+
+
+
+![image-20230317235800820](img/Netty学习笔记/image-20230317235800820.png)
+
+
+
+![image-20230317235820395](img/Netty学习笔记/image-20230317235820395.png)
+
+
+
+
+
+使用示例：
+
+```java
+package mao.t1;
+
+import io.netty.channel.DefaultEventLoopGroup;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t1
+ * Class(类名): EventLoopGroupTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/17
+ * Time(创建时间)： 23:59
+ * Version(版本): 1.0
+ * Description(描述)： EventLoopGroup测试
+ */
+
+@Slf4j
+public class EventLoopGroupTest
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        //内部创建了三个EventLoop,每个EventLoop维护一个线程
+        DefaultEventLoopGroup defaultEventLoopGroup = new DefaultEventLoopGroup(3);
+        log.debug(defaultEventLoopGroup.next().toString());
+        log.debug(defaultEventLoopGroup.next().toString());
+        log.debug(defaultEventLoopGroup.next().toString());
+        //第4个和第一个地址一样
+        log.debug(defaultEventLoopGroup.next().toString());
+        defaultEventLoopGroup.submit(() -> log.debug("1"));
+        Thread.sleep(100);
+        defaultEventLoopGroup.submit(() -> log.debug("2"));
+        Thread.sleep(100);
+        defaultEventLoopGroup.submit(() -> log.debug("3"));
+        Thread.sleep(100);
+        //循环
+        defaultEventLoopGroup.submit(() -> log.debug("4"));
+        Thread.sleep(100);
+        defaultEventLoopGroup.submit(() -> log.debug("5"));
+        Thread.sleep(100);
+        //和直接调用submit方法一样
+        defaultEventLoopGroup.next().submit(() -> log.debug("6"));
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-18  00:05:25.636  [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory:  Using SLF4J as the default logging framework
+2023-03-18  00:05:25.639  [main] DEBUG io.netty.channel.MultithreadEventLoopGroup:  -Dio.netty.eventLoopThreads: 64
+2023-03-18  00:05:25.644  [main] DEBUG io.netty.util.internal.InternalThreadLocalMap:  -Dio.netty.threadLocalMap.stringBuilder.initialSize: 1024
+2023-03-18  00:05:25.644  [main] DEBUG io.netty.util.internal.InternalThreadLocalMap:  -Dio.netty.threadLocalMap.stringBuilder.maxSize: 4096
+2023-03-18  00:05:25.647  [main] DEBUG mao.t1.EventLoopGroupTest:  io.netty.channel.DefaultEventLoop@1ca3b418
+2023-03-18  00:05:25.647  [main] DEBUG mao.t1.EventLoopGroupTest:  io.netty.channel.DefaultEventLoop@58cbafc2
+2023-03-18  00:05:25.648  [main] DEBUG mao.t1.EventLoopGroupTest:  io.netty.channel.DefaultEventLoop@2034b64c
+2023-03-18  00:05:25.648  [main] DEBUG mao.t1.EventLoopGroupTest:  io.netty.channel.DefaultEventLoop@1ca3b418
+2023-03-18  00:05:25.649  [defaultEventLoopGroup-2-1] DEBUG mao.t1.EventLoopGroupTest:  1
+2023-03-18  00:05:25.756  [defaultEventLoopGroup-2-2] DEBUG mao.t1.EventLoopGroupTest:  2
+2023-03-18  00:05:25.867  [defaultEventLoopGroup-2-3] DEBUG mao.t1.EventLoopGroupTest:  3
+2023-03-18  00:05:25.979  [defaultEventLoopGroup-2-1] DEBUG mao.t1.EventLoopGroupTest:  4
+2023-03-18  00:05:26.088  [defaultEventLoopGroup-2-2] DEBUG mao.t1.EventLoopGroupTest:  5
+2023-03-18  00:05:26.197  [defaultEventLoopGroup-2-3] DEBUG mao.t1.EventLoopGroupTest:  6
+```
+
+
+
+![image-20230318000712126](img/Netty学习笔记/image-20230318000712126.png)
+
+
+
+
+
+
+
+也可以使用 for 循环:
+
+```java
+package mao.t1;
+
+import io.netty.channel.DefaultEventLoopGroup;
+import io.netty.util.concurrent.EventExecutor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t1
+ * Class(类名): EventLoopGroupTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 0:08
+ * Version(版本): 1.0
+ * Description(描述)： EventLoopGroup测试
+ */
+
+@Slf4j
+public class EventLoopGroupTest2
+{
+    public static void main(String[] args)
+    {
+        //内部创建了三个EventLoop,每个EventLoop维护一个线程
+        DefaultEventLoopGroup defaultEventLoopGroup = new DefaultEventLoopGroup(3);
+        for (EventExecutor eventExecutor : defaultEventLoopGroup)
+        {
+            log.debug(eventExecutor.toString());
+        }
+        //再次调用
+        for (EventExecutor eventExecutor : defaultEventLoopGroup)
+        {
+            log.debug(eventExecutor.toString());
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@1ca3b418
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@58cbafc2
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@2034b64c
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@1ca3b418
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@58cbafc2
+2023-03-18  00:09:15.981  [main] DEBUG mao.t1.EventLoopGroupTest2:  io.netty.channel.DefaultEventLoop@2034b64c
+```
+
+
+
+
 
