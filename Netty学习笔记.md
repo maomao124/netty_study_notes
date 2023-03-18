@@ -7150,7 +7150,7 @@ defaultEventLoopGroup.shutdownGracefully();
 
 
 
-## NioEventLoop处理io事件
+### NioEventLoop处理io事件
 
 服务端
 
@@ -7424,7 +7424,269 @@ public class Client
 
 
 
-## handler执行中何换工人
+### handler执行中更换工人
+
+思路：
+
+* 如果两个 handler 绑定的是同一个线程，那么就直接调用
+* 否则，把要调用的代码封装为一个任务对象，由下一个 handler 的线程来调用
+
+
+
+服务端
+
+```java
+package mao.t3;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoop;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.util.concurrent.EventExecutor;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t3
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 21:13
+ * Version(版本): 1.0
+ * Description(描述)： handler执行中更换工人
+ */
+
+@Slf4j
+public class Server
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup(3);
+        new ServerBootstrap()
+                //第一个参数是处理接收事件的EventLoop，线程数量为1个，第二个参数为处理读写事件的EventLoop，线程数量为3个
+                .group(new NioEventLoopGroup(1), nioEventLoopGroup)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new StringDecoder())
+                                .addLast(new SimpleChannelInboundHandler<String>()
+                                {
+                                    @Override
+                                    protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception
+                                    {
+                                        log.debug("当前处理的工人：" + Thread.currentThread().getName());
+                                        EventLoop next = nioEventLoopGroup.next();
+                                        //下一个 handler 的事件循环是否与当前的事件循环是同一个线程
+                                        if (next.inEventLoop())
+                                        {
+                                            log.debug("更换工人，是同一个工人");
+                                            log.debug(ctx.toString());
+                                            log.debug(msg);
+                                        }
+                                        else
+                                        {
+                                            log.debug("更换工人，不是同一个工人");
+                                            next.execute(new Runnable()
+                                            {
+                                                @Override
+                                                public void run()
+                                                {
+                                                    log.debug("现在处理的工人：" + Thread.currentThread().getName());
+                                                    log.debug(ctx.toString());
+                                                    log.debug(msg);
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                    }
+                })
+                .bind(8080)
+                .sync();
+
+    }
+}
+
+```
+
+
+
+客户端
+
+```java
+package mao.t3;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import lombok.SneakyThrows;
+
+import java.net.InetSocketAddress;
+import java.util.Scanner;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t3
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 21:15
+ * Version(版本): 1.0
+ * Description(描述)： handler执行中更换工人
+ */
+
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        while (true)
+        {
+            Channel channel = new Bootstrap()
+                    .group(new NioEventLoopGroup(1))
+                    .channel(NioSocketChannel.class)
+                    .handler(new ChannelInitializer<NioSocketChannel>()
+                    {
+                        @Override
+                        protected void initChannel(NioSocketChannel ch) throws Exception
+                        {
+                            ch.pipeline().addLast(new StringEncoder())
+                                    .addLast(new LoggingHandler(LogLevel.DEBUG));
+                        }
+                    })
+                    .connect(new InetSocketAddress(8080)).sync().channel();
+
+            channel.writeAndFlush("hello");
+            Thread.sleep(100);
+            Scanner input = new Scanner(System.in);
+            input.nextLine();
+            channel.close();
+        }
+    }
+
+
+}
+```
+
+
+
+服务端运行结果：
+
+```sh
+2023-03-18  21:30:47.807  [nioEventLoopGroup-2-1] DEBUG mao.t3.Server:  当前处理的工人：nioEventLoopGroup-2-1
+2023-03-18  21:30:47.807  [nioEventLoopGroup-2-1] DEBUG mao.t3.Server:  更换工人，不是同一个工人
+2023-03-18  21:30:47.808  [nioEventLoopGroup-2-2] DEBUG mao.t3.Server:  现在处理的工人：nioEventLoopGroup-2-2
+2023-03-18  21:30:47.811  [nioEventLoopGroup-2-2] DEBUG mao.t3.Server:  ChannelHandlerContext(Server$1$1#0, [id: 0x280521ce, L:/127.0.0.1:8080 - R:/127.0.0.1:53483])
+2023-03-18  21:30:47.811  [nioEventLoopGroup-2-2] DEBUG mao.t3.Server:  hello
+2023-03-18  21:31:06.647  [nioEventLoopGroup-2-3] DEBUG mao.t3.Server:  当前处理的工人：nioEventLoopGroup-2-3
+2023-03-18  21:31:06.647  [nioEventLoopGroup-2-3] DEBUG mao.t3.Server:  更换工人，不是同一个工人
+2023-03-18  21:31:06.647  [nioEventLoopGroup-2-1] DEBUG mao.t3.Server:  现在处理的工人：nioEventLoopGroup-2-1
+2023-03-18  21:31:06.647  [nioEventLoopGroup-2-1] DEBUG mao.t3.Server:  ChannelHandlerContext(Server$1$1#0, [id: 0xac85c1c5, L:/127.0.0.1:8080 - R:/127.0.0.1:53486])
+2023-03-18  21:31:06.647  [nioEventLoopGroup-2-1] DEBUG mao.t3.Server:  hello
+2023-03-18  21:31:14.819  [nioEventLoopGroup-2-2] DEBUG mao.t3.Server:  当前处理的工人：nioEventLoopGroup-2-2
+2023-03-18  21:31:14.819  [nioEventLoopGroup-2-2] DEBUG mao.t3.Server:  更换工人，不是同一个工人
+2023-03-18  21:31:14.819  [nioEventLoopGroup-2-3] DEBUG mao.t3.Server:  现在处理的工人：nioEventLoopGroup-2-3
+2023-03-18  21:31:14.819  [nioEventLoopGroup-2-3] DEBUG mao.t3.Server:  ChannelHandlerContext(Server$1$1#0, [id: 0xefff5a5b, L:/127.0.0.1:8080 - R:/127.0.0.1:53488])
+2023-03-18  21:31:14.819  [nioEventLoopGroup-2-3] DEBUG mao.t3.Server:  hello
+```
+
+
+
+
+
+
+
+### NioEventLoop处理普通任务
+
+```java
+package mao.t4;
+
+import io.netty.channel.nio.NioEventLoopGroup;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t4
+ * Class(类名): NioEventLoopTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 21:33
+ * Version(版本): 1.0
+ * Description(描述)： NioEventLoop处理普通任务
+ */
+
+@Slf4j
+public class NioEventLoopTest
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+
+        NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup(3);
+        log.debug("启动");
+        for (int i = 0; i < 10; i++)
+        {
+            nioEventLoopGroup.execute(new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    log.debug("当前线程：" + Thread.currentThread().getName());
+                }
+            });
+            Thread.sleep(100);
+        }
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-18  21:37:17.780  [main] DEBUG mao.t4.NioEventLoopTest:  启动
+2023-03-18  21:37:17.782  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-1
+2023-03-18  21:37:17.884  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-2
+2023-03-18  21:37:17.993  [nioEventLoopGroup-2-3] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-3
+2023-03-18  21:37:18.104  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-1
+2023-03-18  21:37:18.215  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-2
+2023-03-18  21:37:18.322  [nioEventLoopGroup-2-3] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-3
+2023-03-18  21:37:18.432  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-1
+2023-03-18  21:37:18.542  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-2
+2023-03-18  21:37:18.654  [nioEventLoopGroup-2-3] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-3
+2023-03-18  21:37:18.763  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest:  当前线程：nioEventLoopGroup-2-1
+```
+
+
+
+
+
+
+
+### NioEventLoop处理定时任务
 
 
 
