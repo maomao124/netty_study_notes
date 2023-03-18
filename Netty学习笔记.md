@@ -7688,5 +7688,263 @@ public class NioEventLoopTest
 
 ### NioEventLoop处理定时任务
 
+```java
+package mao.t4;
 
+import io.netty.channel.nio.NioEventLoopGroup;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t4
+ * Class(类名): NioEventLoopTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 21:41
+ * Version(版本): 1.0
+ * Description(描述)： NioEventLoop处理定时任务
+ */
+
+@Slf4j
+public class NioEventLoopTest2
+{
+
+    public static void main(String[] args)
+    {
+        AtomicInteger count1 = new AtomicInteger(0);
+        AtomicInteger count2 = new AtomicInteger(0);
+        NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup(2);
+        nioEventLoopGroup.scheduleAtFixedRate(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                log.debug("执行定时任务1，第" + count1.incrementAndGet() + "次");
+            }
+        }, 0, 1000, TimeUnit.MILLISECONDS);
+
+        nioEventLoopGroup.scheduleAtFixedRate(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                log.debug("执行定时任务2，第" + count2.incrementAndGet() + "次");
+            }
+        }, 0, 600, TimeUnit.MILLISECONDS);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-18  21:50:07.046  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第1次
+2023-03-18  21:50:07.055  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第1次
+2023-03-18  21:50:07.670  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第2次
+2023-03-18  21:50:08.059  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第2次
+2023-03-18  21:50:08.260  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第3次
+2023-03-18  21:50:08.856  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第4次
+2023-03-18  21:50:09.056  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第3次
+2023-03-18  21:50:09.464  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第5次
+2023-03-18  21:50:10.054  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第4次
+2023-03-18  21:50:10.070  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第6次
+2023-03-18  21:50:10.661  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第7次
+2023-03-18  21:50:11.051  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第5次
+2023-03-18  21:50:11.269  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第8次
+2023-03-18  21:50:11.861  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第9次
+2023-03-18  21:50:12.045  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第6次
+2023-03-18  21:50:12.465  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第10次
+2023-03-18  21:50:13.055  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第7次
+2023-03-18  21:50:13.055  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第11次
+2023-03-18  21:50:13.660  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第12次
+2023-03-18  21:50:14.048  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第8次
+2023-03-18  21:50:14.264  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第13次
+2023-03-18  21:50:14.869  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第14次
+2023-03-18  21:50:15.056  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第9次
+2023-03-18  21:50:15.460  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第15次
+2023-03-18  21:50:16.050  [nioEventLoopGroup-2-1] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务1，第10次
+2023-03-18  21:50:16.066  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第16次
+2023-03-18  21:50:16.669  [nioEventLoopGroup-2-2] DEBUG mao.t4.NioEventLoopTest2:  执行定时任务2，第17次
+```
+
+
+
+
+
+
+
+
+
+
+
+## Channel
+
+channel 的主要作用
+
+* close() 可以用来关闭 channel
+* closeFuture() 用来处理 channel 的关闭
+  * sync 方法作用是同步等待 channel 关闭
+  * 而 addListener 方法是异步等待 channel 关闭
+* pipeline() 方法添加处理器
+* write() 方法将数据写入
+* writeAndFlush() 方法将数据写入并刷出
+
+
+
+
+
+### ChannelFuture
+
+获得ChannelFuture：
+
+```java
+package mao.t5;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.string.StringEncoder;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t5
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 21:54
+ * Version(版本): 1.0
+ * Description(描述)： ChannelFuture
+ */
+
+@Slf4j
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        //获得channelFuture对象
+        ChannelFuture channelFuture = new Bootstrap()
+                .channel(NioSocketChannel.class)
+                .group(new NioEventLoopGroup())
+                .handler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new StringEncoder());
+                    }
+                })
+                .connect(new InetSocketAddress(8080));
+
+        log.debug("------------");
+        log.debug(channelFuture.toString());
+        channelFuture.sync();
+        channelFuture.channel().writeAndFlush("hello");
+    }
+}
+```
+
+
+
+**connect 方法是异步的，意味着不等连接建立，方法执行就返回了。因此 channelFuture 对象中不能立刻获得到正确的 Channel 对象**
+
+
+
+除了用 sync 方法可以让异步操作同步以外，还可以使用回调的方式：
+
+```java
+package mao.t5;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.string.StringEncoder;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t5
+ * Class(类名): Client2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/18
+ * Time(创建时间)： 22:03
+ * Version(版本): 1.0
+ * Description(描述)： ChannelFuture
+ */
+
+@Slf4j
+public class Client2
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        //获得channelFuture对象
+        ChannelFuture channelFuture = new Bootstrap()
+                .channel(NioSocketChannel.class)
+                .group(new NioEventLoopGroup())
+                .handler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new StringEncoder());
+                    }
+                })
+                .connect(new InetSocketAddress(8080));
+
+        log.debug("------------");
+        log.debug(channelFuture.toString());
+        //channelFuture.sync();
+        channelFuture.addListener(new ChannelFutureListener()
+        {
+            /**
+             * 操作完成
+             *
+             * @param future ChannelFuture
+             * @throws Exception 异常
+             */
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception
+            {
+                log.debug("连接完成");
+                channelFuture.channel().writeAndFlush("hello");
+            }
+        });
+
+    }
+}
+```
+
+
+
+
+
+
+
+### CloseFuture
 
