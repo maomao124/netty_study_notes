@@ -8947,3 +8947,353 @@ java.lang.RuntimeException: 执行错误
 
 ## Handler和Pipeline
 
+ChannelHandler 用来处理 Channel 上的各种事件，分为入站、出站两种。所有 ChannelHandler 被连成一串，就是 Pipeline
+
+* 入站处理器通常是 ChannelInboundHandlerAdapter 的子类，主要用来读取客户端数据，写回结果
+* 出站处理器通常是 ChannelOutboundHandlerAdapter 的子类，主要对写回结果进行加工
+
+
+
+每个 Channel 是一个产品的加工车间，Pipeline 是车间中的流水线，ChannelHandler 就是流水线上的各道工序，而后面要讲的 ByteBuf 是原材料，经过很多工序的加工：先经过一道道入站工序，再经过一道道出站工序最终变成产品
+
+
+
+```java
+package mao.t7;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.*;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t7
+ * Class(类名): HandlerTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/20
+ * Time(创建时间)： 19:45
+ * Version(版本): 1.0
+ * Description(描述)： Handler
+ */
+
+@Slf4j
+public class HandlerTest
+{
+    public static void main(String[] args)
+    {
+        new ServerBootstrap()
+                .group(new NioEventLoopGroup(), new NioEventLoopGroup(3))
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                                    {
+                                        log.debug("入栈处理器：1");
+                                        super.channelRead(ctx, msg);
+                                    }
+                                })
+                                .addLast(new ChannelInboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                                    {
+                                        log.debug("入栈处理器：2");
+                                        super.channelRead(ctx, msg);
+                                    }
+                                })
+                                .addLast(new ChannelInboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                                    {
+                                        log.debug("入栈处理器：3");
+                                        super.channelRead(ctx, msg);
+                                    }
+                                })
+                                .addLast(new ChannelInboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                                    {
+                                        log.debug("入栈处理器：4");
+                                        ctx.channel().write("hello");
+                                    }
+                                })
+                                .addLast(new ChannelOutboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                            throws Exception
+                                    {
+                                        log.debug("出栈处理器：5");
+                                        super.write(ctx, msg, promise);
+                                    }
+                                })
+                                .addLast(new ChannelOutboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                            throws Exception
+                                    {
+                                        log.debug("出栈处理器：6");
+                                        super.write(ctx, msg, promise);
+                                    }
+                                })
+                                .addLast(new ChannelOutboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                            throws Exception
+                                    {
+                                        log.debug("出栈处理器：7");
+                                        super.write(ctx, msg, promise);
+                                    }
+                                })
+                                .addLast(new ChannelOutboundHandlerAdapter()
+                                {
+                                    @Override
+                                    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+                                            throws Exception
+                                    {
+                                        log.debug("出栈处理器：8");
+                                        super.write(ctx, msg, promise);
+                                    }
+                                });
+                    }
+                })
+                .bind(8080);
+    }
+}
+```
+
+
+
+客户端
+
+```java
+package mao.t7;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t7
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/20
+ * Time(创建时间)： 20:50
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+@Slf4j
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        Channel channel = new Bootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<Channel>()
+                {
+                    @Override
+                    protected void initChannel(Channel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new StringEncoder());
+                    }
+                })
+                .connect(new InetSocketAddress(8080)).sync().channel();
+        channel.writeAndFlush("hello");
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：1
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：2
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：3
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：4
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：8
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：7
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：6
+2023-03-20  21:02:01.307  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：5
+```
+
+
+
+
+
+可以看到，ChannelInboundHandlerAdapter 是按照 addLast 的顺序执行的，而 ChannelOutboundHandlerAdapter 是按照 addLast 的逆序执行的。ChannelPipeline 的实现是一个 ChannelHandlerContext（包装了 ChannelHandler） 组成的双向链表
+
+
+
+![image-20230320210227348](img/Netty学习笔记/image-20230320210227348.png)
+
+
+
+
+
+如果注释掉处理器1的super.channelRead(ctx, msg)代码
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+{
+    log.debug("入栈处理器：1");
+    //super.channelRead(ctx, msg);
+}
+```
+
+
+
+那么只会打印1
+
+```sh
+2023-03-20  21:04:37.663  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：1
+```
+
+
+
+如果只注释掉处理器3的super.channelRead(ctx, msg)代码
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+{
+    log.debug("入栈处理器：3");
+    //super.channelRead(ctx, msg);
+}
+```
+
+
+
+那么会打印1、2和3
+
+```sh
+2023-03-20  21:05:28.347  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：1
+2023-03-20  21:05:28.348  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：2
+2023-03-20  21:05:28.348  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：3
+```
+
+
+
+处理器4的ctx.channel().write(msg) 会 **从尾部开始触发** 后续出站处理器的执行
+
+
+
+如果注释掉处理器6的super.write(ctx, msg, promise)代码
+
+```java
+@Override
+public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise)
+        throws Exception
+{
+    log.debug("出栈处理器：6");
+    //super.write(ctx, msg, promise);
+}
+```
+
+
+
+不会打印5
+
+```sh
+2023-03-20  21:08:11.394  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：1
+2023-03-20  21:08:11.394  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：2
+2023-03-20  21:08:11.394  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：3
+2023-03-20  21:08:11.395  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：4
+2023-03-20  21:08:11.395  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：8
+2023-03-20  21:08:11.395  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：7
+2023-03-20  21:08:11.395  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  出栈处理器：6
+```
+
+
+
+
+
+如果处理器4更改成以下代码
+
+```java
+@Override
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+{
+    log.debug("入栈处理器：4");
+    //ctx.channel().write("hello");
+    ctx.write("hello");
+}
+```
+
+
+
+```sh
+2023-03-20  21:10:35.279  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：1
+2023-03-20  21:10:35.279  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：2
+2023-03-20  21:10:35.279  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：3
+2023-03-20  21:10:35.280  [nioEventLoopGroup-3-1] DEBUG mao.t7.HandlerTest:  入栈处理器：4
+```
+
+
+
+原因：4 处的 ctx.channel().write(msg) 如果改为 ctx.write(msg) 仅会打印 1 2 3  4，因为节点4之前没有其它出站处理器了
+
+
+
+
+
+**ctx.channel().write(msg) 和 ctx.write(msg) 的区别**
+
+* 都是触发出站处理器的执行
+* ctx.channel().write(msg) 从尾部开始查找出站处理器
+* ctx.write(msg) 是从当前节点找上一个出站处理器
+
+
+
+
+
+![image-20230320211329291](img/Netty学习笔记/image-20230320211329291.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ByteBuf
+
+
+
