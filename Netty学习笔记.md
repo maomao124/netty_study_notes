@@ -8135,3 +8135,815 @@ q
 
 ## Future和Promise
 
+在异步处理时，经常用到这两个接口
+
+netty 中的 Future 与 jdk 中的 Future 同名，但是是两个接口，netty 的 Future 继承自 jdk 的 Future，而 Promise 又对 netty Future 进行了扩展
+
+* jdk Future 只能同步等待任务结束（或成功、或失败）才能得到结果
+* netty Future 可以同步等待任务结束得到结果，也可以异步方式得到结果，但都是要等任务结束
+* netty Promise 不仅有 netty Future 的功能，而且脱离了任务独立存在，只作为两个线程间传递结果的容器
+
+
+
+|  功能/名称   |           jdk Future           |                         netty Future                         |   Promise    |
+| :----------: | :----------------------------: | :----------------------------------------------------------: | :----------: |
+|    cancel    |            取消任务            |                              -                               |      -       |
+|  isCanceled  |          任务是否取消          |                              -                               |      -       |
+|    isDone    | 任务是否完成，不能区分成功失败 |                              -                               |      -       |
+|     get      |     获取任务结果，阻塞等待     |                              -                               |      -       |
+|    getNow    |               -                |        获取任务结果，非阻塞，还未产生结果时返回 null         |      -       |
+|    await     |               -                | 等待任务结束，如果任务失败，不会抛异常，而是通过 isSuccess 判断 |      -       |
+|     sync     |               -                |             等待任务结束，如果任务失败，抛出异常             |      -       |
+|  isSuccess   |               -                |                       判断任务是否成功                       |      -       |
+|    cause     |               -                |         获取失败信息，非阻塞，如果没有失败，返回null         |      -       |
+| addLinstener |               -                |                    添加回调，异步接收结果                    |      -       |
+|  setSuccess  |               -                |                              -                               | 设置成功结果 |
+|  setFailure  |               -                |                              -                               | 设置失败结果 |
+
+
+
+![image-20230319222247557](img/Netty学习笔记/image-20230319222247557.png)
+
+
+
+![image-20230319222310007](img/Netty学习笔记/image-20230319222310007.png)
+
+
+
+
+
+### Future
+
+**同步处理任务**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoopGroup;
+import io.netty.util.concurrent.Future;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.Callable;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): FutureTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:24
+ * Version(版本): 1.0
+ * Description(描述)： Future测试，同步处理任务
+ */
+
+@Slf4j
+public class FutureTest
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoopGroup defaultEventLoopGroup = new DefaultEventLoopGroup(3);
+        Future<Integer> future = defaultEventLoopGroup.submit(new Callable<Integer>()
+        {
+            @Override
+            public Integer call() throws Exception
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException e)
+                {
+                    e.printStackTrace();
+                }
+                log.debug("执行成功");
+                return 10;
+            }
+        });
+
+        log.debug(future.toString());
+        //现在读取，无法读取
+        Integer integer = future.getNow();
+        log.debug(String.valueOf(integer));
+        log.debug("开始同步等待结果");
+        future.sync();
+        integer = future.getNow();
+        log.debug(integer.toString());
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  22:33:31.171  [main] DEBUG mao.t6.FutureTest:  PromiseTask@3a7442c7(incomplete, task: mao.t6.FutureTest$1@4be29ed9)
+2023-03-19  22:33:31.172  [main] DEBUG mao.t6.FutureTest:  null
+2023-03-19  22:33:31.172  [main] DEBUG mao.t6.FutureTest:  开始同步等待结果
+2023-03-19  22:33:32.182  [defaultEventLoopGroup-2-1] DEBUG mao.t6.FutureTest:  执行成功
+2023-03-19  22:33:32.182  [main] DEBUG mao.t6.FutureTest:  10
+```
+
+
+
+
+
+**异步处理任务**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoopGroup;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.Callable;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): FutureTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:35
+ * Version(版本): 1.0
+ * Description(描述)： Future测试，异步处理任务
+ */
+
+@Slf4j
+public class FutureTest2
+{
+    public static void main(String[] args)
+    {
+        DefaultEventLoopGroup defaultEventLoopGroup = new DefaultEventLoopGroup(3);
+        Future<Integer> future = defaultEventLoopGroup.submit(new Callable<Integer>()
+        {
+            @Override
+            public Integer call() throws Exception
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (InterruptedException e)
+                {
+                    e.printStackTrace();
+                }
+                log.debug("执行成功");
+                return 20;
+            }
+        });
+
+        log.debug(future.toString());
+        //现在读取，无法读取
+        Integer integer = future.getNow();
+        log.debug(String.valueOf(integer));
+        log.debug("开始异步等待结果");
+        future.addListener(new GenericFutureListener<Future<? super Integer>>()
+        {
+            /**
+             * 操作完成
+             *
+             * @param future Future
+             * @throws Exception 异常
+             */
+            @Override
+            public void operationComplete(Future<? super Integer> future) throws Exception
+            {
+                log.debug("等待完成，结果：" + future.get());
+            }
+        });
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  22:37:45.795  [main] DEBUG mao.t6.FutureTest2:  PromiseTask@3a7442c7(incomplete, task: mao.t6.FutureTest2$1@4be29ed9)
+2023-03-19  22:37:45.796  [main] DEBUG mao.t6.FutureTest2:  null
+2023-03-19  22:37:45.796  [main] DEBUG mao.t6.FutureTest2:  开始异步等待结果
+2023-03-19  22:37:46.810  [defaultEventLoopGroup-2-1] DEBUG mao.t6.FutureTest2:  执行成功
+2023-03-19  22:37:46.811  [defaultEventLoopGroup-2-1] DEBUG mao.t6.FutureTest2:  等待完成，结果：20
+```
+
+
+
+
+
+
+
+### Promise
+
+**同步处理任务成功**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.channel.DefaultEventLoopGroup;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.Callable;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:39
+ * Version(版本): 1.0
+ * Description(描述)： Promise测试 ，同步处理任务成功
+ */
+
+@Slf4j
+public class PromiseTest
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+                log.debug("执行完成");
+                promise.setSuccess(30);
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("同步等待结果");
+        log.debug("结果：" + promise.get());
+
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  22:44:26.183  [main] DEBUG mao.t6.PromiseTest:  DefaultPromise@15bb5034(incomplete)
+2023-03-19  22:44:26.183  [main] DEBUG mao.t6.PromiseTest:  读取数据：null
+2023-03-19  22:44:26.183  [main] DEBUG mao.t6.PromiseTest:  同步等待结果
+2023-03-19  22:44:27.191  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest:  执行完成
+2023-03-19  22:44:27.192  [main] DEBUG mao.t6.PromiseTest:  结果：30
+```
+
+
+
+
+
+**异步处理任务成功**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:45
+ * Version(版本): 1.0
+ * Description(描述)： Promise测试 ，异步处理任务成功
+ */
+
+@Slf4j
+public class PromiseTest2
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+                log.debug("执行完成");
+                promise.setSuccess(40);
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("同步等待结果");
+        promise.addListener(new GenericFutureListener<Future<? super Integer>>()
+        {
+            @Override
+            public void operationComplete(Future<? super Integer> future) throws Exception
+            {
+                log.debug("结果：" + promise.get());
+            }
+        });
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  22:46:58.927  [main] DEBUG mao.t6.PromiseTest2:  DefaultPromise@2eae8e6e(incomplete)
+2023-03-19  22:46:58.927  [main] DEBUG mao.t6.PromiseTest2:  读取数据：null
+2023-03-19  22:46:58.927  [main] DEBUG mao.t6.PromiseTest2:  同步等待结果
+2023-03-19  22:46:59.942  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest2:  执行完成
+2023-03-19  22:46:59.942  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest2:  结果：40
+```
+
+
+
+
+
+**同步处理任务失败 get**
+
+sync() 也会出现异常，只是 get 会再用 ExecutionException 包一层异常
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest3
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:54
+ * Version(版本): 1.0
+ * Description(描述)： 同步处理任务失败 get
+ */
+
+@Slf4j
+public class PromiseTest3
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                    throw new RuntimeException("执行错误");
+                    //log.debug("执行完成");
+                    //promise.setSuccess(30);
+                }
+                catch (Exception e)
+                {
+                    log.debug("执行错误");
+                    promise.setFailure(e);
+                }
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("同步等待结果");
+        log.debug("结果：" + promise.get());
+
+    }
+}
+
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  22:58:02.197  [main] DEBUG mao.t6.PromiseTest3:  DefaultPromise@15bb5034(incomplete)
+2023-03-19  22:58:02.198  [main] DEBUG mao.t6.PromiseTest3:  读取数据：null
+2023-03-19  22:58:02.198  [main] DEBUG mao.t6.PromiseTest3:  同步等待结果
+2023-03-19  22:58:03.203  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest3:  执行错误
+Exception in thread "main" java.util.concurrent.ExecutionException: java.lang.RuntimeException: 执行错误
+	at io.netty.util.concurrent.AbstractFuture.get(AbstractFuture.java:41)
+	at mao.t6.PromiseTest3.main(PromiseTest3.java:53)
+Caused by: java.lang.RuntimeException: 执行错误
+	at mao.t6.PromiseTest3$1.run(PromiseTest3.java:38)
+	at io.netty.channel.DefaultEventLoop.run(DefaultEventLoop.java:54)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:918)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:831)
+```
+
+
+
+
+
+**同步处理任务失败 sync**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest4
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 22:59
+ * Version(版本): 1.0
+ * Description(描述)： 同步处理任务失败 sync
+ */
+
+@Slf4j
+public class PromiseTest4
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+                    throw new RuntimeException("执行错误");
+                    //log.debug("执行完成");
+                    //promise.setSuccess(30);
+                }
+                catch (Exception e)
+                {
+                    log.debug("执行错误");
+                    promise.setFailure(e);
+                }
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("同步等待结果");
+        promise.sync();
+        log.debug("结果：" + promise.getNow());
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  23:01:02.550  [main] DEBUG mao.t6.PromiseTest4:  DefaultPromise@15bb5034(incomplete)
+2023-03-19  23:01:02.552  [main] DEBUG mao.t6.PromiseTest4:  读取数据：null
+2023-03-19  23:01:02.552  [main] DEBUG mao.t6.PromiseTest4:  同步等待结果
+2023-03-19  23:01:03.554  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest4:  执行错误
+2023-03-19  23:01:03.562  [main] DEBUG io.netty.util.internal.PlatformDependent:  Platform: Windows
+2023-03-19  23:01:03.564  [main] DEBUG io.netty.util.internal.PlatformDependent0:  -Dio.netty.noUnsafe: false
+2023-03-19  23:01:03.565  [main] DEBUG io.netty.util.internal.PlatformDependent0:  Java version: 16
+2023-03-19  23:01:03.566  [main] DEBUG io.netty.util.internal.PlatformDependent0:  sun.misc.Unsafe.theUnsafe: available
+2023-03-19  23:01:03.566  [main] DEBUG io.netty.util.internal.PlatformDependent0:  sun.misc.Unsafe.copyMemory: available
+2023-03-19  23:01:03.567  [main] DEBUG io.netty.util.internal.PlatformDependent0:  java.nio.Buffer.address: available
+2023-03-19  23:01:03.568  [main] DEBUG io.netty.util.internal.PlatformDependent0:  direct buffer constructor: unavailable
+java.lang.UnsupportedOperationException: Reflective setAccessible(true) disabled
+	at io.netty.util.internal.ReflectionUtil.trySetAccessible(ReflectionUtil.java:31) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.PlatformDependent0$4.run(PlatformDependent0.java:224) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at java.security.AccessController.doPrivileged(AccessController.java:312) ~[?:?]
+	at io.netty.util.internal.PlatformDependent0.<clinit>(PlatformDependent0.java:218) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.PlatformDependent.isAndroid(PlatformDependent.java:272) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.PlatformDependent.<clinit>(PlatformDependent.java:92) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.DefaultPromise.rethrowIfFailed(DefaultPromise.java:573) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.DefaultPromise.sync(DefaultPromise.java:327) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at mao.t6.PromiseTest4.main(PromiseTest4.java:53) [classes/:?]
+2023-03-19  23:01:03.587  [main] DEBUG io.netty.util.internal.PlatformDependent0:  java.nio.Bits.unaligned: available, true
+2023-03-19  23:01:03.588  [main] DEBUG io.netty.util.internal.PlatformDependent0:  jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable
+java.lang.IllegalAccessException: class io.netty.util.internal.PlatformDependent0$6 cannot access class jdk.internal.misc.Unsafe (in module java.base) because module java.base does not export jdk.internal.misc to unnamed module @1188e820
+	at jdk.internal.reflect.Reflection.newIllegalAccessException(Reflection.java:385) ~[?:?]
+	at java.lang.reflect.AccessibleObject.checkAccess(AccessibleObject.java:687) ~[?:?]
+	at java.lang.reflect.Method.invoke(Method.java:559) ~[?:?]
+	at io.netty.util.internal.PlatformDependent0$6.run(PlatformDependent0.java:334) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at java.security.AccessController.doPrivileged(AccessController.java:312) ~[?:?]
+	at io.netty.util.internal.PlatformDependent0.<clinit>(PlatformDependent0.java:325) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.PlatformDependent.isAndroid(PlatformDependent.java:272) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.PlatformDependent.<clinit>(PlatformDependent.java:92) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.DefaultPromise.rethrowIfFailed(DefaultPromise.java:573) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.DefaultPromise.sync(DefaultPromise.java:327) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at mao.t6.PromiseTest4.main(PromiseTest4.java:53) [classes/:?]
+2023-03-19  23:01:03.589  [main] DEBUG io.netty.util.internal.PlatformDependent0:  java.nio.DirectByteBuffer.<init>(long, int): unavailable
+2023-03-19  23:01:03.589  [main] DEBUG io.netty.util.internal.PlatformDependent:  sun.misc.Unsafe: available
+2023-03-19  23:01:03.589  [main] DEBUG io.netty.util.internal.PlatformDependent:  maxDirectMemory: 8522825728 bytes (maybe)
+2023-03-19  23:01:03.590  [main] DEBUG io.netty.util.internal.PlatformDependent:  -Dio.netty.tmpdir: C:\Users\mao\AppData\Local\Temp (java.io.tmpdir)
+2023-03-19  23:01:03.590  [main] DEBUG io.netty.util.internal.PlatformDependent:  -Dio.netty.bitMode: 64 (sun.arch.data.model)
+2023-03-19  23:01:03.590  [main] DEBUG io.netty.util.internal.PlatformDependent:  -Dio.netty.maxDirectMemory: -1 bytes
+2023-03-19  23:01:03.592  [main] DEBUG io.netty.util.internal.PlatformDependent:  -Dio.netty.uninitializedArrayAllocationThreshold: -1
+2023-03-19  23:01:03.592  [main] DEBUG io.netty.util.internal.CleanerJava9:  java.nio.ByteBuffer.cleaner(): available
+2023-03-19  23:01:03.593  [main] DEBUG io.netty.util.internal.PlatformDependent:  -Dio.netty.noPreferDirect: false
+Exception in thread "main" java.lang.RuntimeException: 执行错误
+	at mao.t6.PromiseTest4$1.run(PromiseTest4.java:38)
+	at io.netty.channel.DefaultEventLoop.run(DefaultEventLoop.java:54)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:918)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:831)
+```
+
+
+
+
+
+
+
+**同步处理任务失败 await**
+
+与 sync 和 get 区别在于，不会抛异常
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest5
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 23:03
+ * Version(版本): 1.0
+ * Description(描述)： 同步处理任务失败 await
+ */
+
+@Slf4j
+public class PromiseTest5
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+
+                    if (System.currentTimeMillis() % 2 == 0)
+                    {
+                        throw new RuntimeException("执行错误");
+                    }
+                    log.debug("执行完成");
+                    promise.setSuccess(100);
+                }
+                catch (Exception e)
+                {
+                    log.debug("执行错误");
+                    promise.setFailure(e);
+                }
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("同步等待结果");
+        promise.await();
+        boolean success = promise.isSuccess();
+        if (success)
+        {
+            log.debug("结果：" + promise.getNow());
+        }
+        else
+        {
+            Throwable throwable = promise.cause();
+            log.warn("处理失败", throwable);
+        }
+
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  23:08:47.960  [main] DEBUG mao.t6.PromiseTest5:  DefaultPromise@15bb5034(incomplete)
+2023-03-19  23:08:47.962  [main] DEBUG mao.t6.PromiseTest5:  读取数据：null
+2023-03-19  23:08:47.962  [main] DEBUG mao.t6.PromiseTest5:  同步等待结果
+2023-03-19  23:08:48.967  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest5:  执行完成
+2023-03-19  23:08:48.969  [main] DEBUG mao.t6.PromiseTest5:  结果：30
+```
+
+```sh
+2023-03-19  23:09:25.030  [main] DEBUG mao.t6.PromiseTest5:  DefaultPromise@15bb5034(incomplete)
+2023-03-19  23:09:25.032  [main] DEBUG mao.t6.PromiseTest5:  读取数据：null
+2023-03-19  23:09:25.032  [main] DEBUG mao.t6.PromiseTest5:  同步等待结果
+2023-03-19  23:09:26.044  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest5:  执行错误
+2023-03-19  23:09:26.045  [main] WARN  mao.t6.PromiseTest5:  处理失败
+java.lang.RuntimeException: 执行错误
+	at mao.t6.PromiseTest5$1.run(PromiseTest5.java:41) ~[classes/:?]
+	at io.netty.channel.DefaultEventLoop.run(DefaultEventLoop.java:54) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:918) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) ~[netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at java.lang.Thread.run(Thread.java:831) ~[?:?]
+```
+
+
+
+
+
+**异步处理任务失败**
+
+```java
+package mao.t6;
+
+import io.netty.channel.DefaultEventLoop;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+import io.netty.util.concurrent.Promise;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_Component
+ * Package(包名): mao.t6
+ * Class(类名): PromiseTest6
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/19
+ * Time(创建时间)： 23:10
+ * Version(版本): 1.0
+ * Description(描述)： 异步处理任务失败
+ */
+
+@Slf4j
+public class PromiseTest6
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        DefaultEventLoop defaultEventLoop = new DefaultEventLoop();
+        Promise<Integer> promise = new DefaultPromise<>(defaultEventLoop);
+        defaultEventLoop.execute(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    Thread.sleep(1000);
+
+                    if (System.currentTimeMillis() % 2 == 0)
+                    {
+                        throw new RuntimeException("执行错误");
+                    }
+                    log.debug("执行完成");
+                    promise.setSuccess(110);
+                }
+                catch (Exception e)
+                {
+                    log.debug("执行错误");
+                    promise.setFailure(e);
+                }
+            }
+        });
+
+        log.debug(promise.toString());
+        log.debug("读取数据：" + promise.getNow());
+        log.debug("异步等待结果");
+        promise.addListener(new GenericFutureListener<Future<? super Integer>>()
+        {
+            @Override
+            public void operationComplete(Future<? super Integer> future) throws Exception
+            {
+                boolean success = promise.isSuccess();
+                if (success)
+                {
+                    log.debug("结果：" + promise.getNow());
+                }
+                else
+                {
+                    Throwable throwable = promise.cause();
+                    log.warn("处理失败", throwable);
+                }
+            }
+        });
+
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-19  23:13:01.522  [main] DEBUG mao.t6.PromiseTest6:  DefaultPromise@2eae8e6e(incomplete)
+2023-03-19  23:13:01.522  [main] DEBUG mao.t6.PromiseTest6:  读取数据：null
+2023-03-19  23:13:01.522  [main] DEBUG mao.t6.PromiseTest6:  异步等待结果
+2023-03-19  23:13:02.523  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest6:  执行完成
+2023-03-19  23:13:02.523  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest6:  结果：110
+```
+
+```sh
+2023-03-19  23:13:19.069  [main] DEBUG mao.t6.PromiseTest6:  DefaultPromise@2eae8e6e(incomplete)
+2023-03-19  23:13:19.069  [main] DEBUG mao.t6.PromiseTest6:  读取数据：null
+2023-03-19  23:13:19.069  [main] DEBUG mao.t6.PromiseTest6:  异步等待结果
+2023-03-19  23:13:20.084  [defaultEventLoop-1-1] DEBUG mao.t6.PromiseTest6:  执行错误
+2023-03-19  23:13:20.085  [defaultEventLoop-1-1] WARN  mao.t6.PromiseTest6:  处理失败
+java.lang.RuntimeException: 执行错误
+	at mao.t6.PromiseTest6$1.run(PromiseTest6.java:43) [classes/:?]
+	at io.netty.channel.DefaultEventLoop.run(DefaultEventLoop.java:54) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:918) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [netty-all-4.1.39.Final.jar:4.1.39.Final]
+	at java.lang.Thread.run(Thread.java:831) [?:?]
+```
+
+
+
+
+
+
+
+
+
+## Handler和Pipeline
+
