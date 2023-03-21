@@ -9295,5 +9295,169 @@ public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
 
 # ByteBuf
 
+ByteBuf是对字节数据的封装
 
 
+
+## ByteBuf创建
+
+```java
+package mao.t1;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import lombok.extern.slf4j.Slf4j;
+
+import static io.netty.buffer.ByteBufUtil.appendPrettyHexDump;
+import static io.netty.util.internal.StringUtil.NEWLINE;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuf
+ * Package(包名): mao.t1
+ * Class(类名): ByteBufTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/20
+ * Time(创建时间)： 21:26
+ * Version(版本): 1.0
+ * Description(描述)： ByteBuf创建
+ */
+
+@Slf4j
+public class ByteBufTest
+{
+    public static void main(String[] args)
+    {
+        //创建一个ByteBuf
+        ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer();
+        log.info(byteBuf.toString());
+        //创建一个ByteBuf，初始容量为20（cap）
+        byteBuf = ByteBufAllocator.DEFAULT.buffer(20);
+        log.info(byteBuf.toString());
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-20  21:30:27.447  [main] INFO  mao.t1.ByteBufTest:  PooledUnsafeDirectByteBuf(ridx: 0, widx: 0, cap: 256)
+2023-03-20  21:30:27.447  [main] INFO  mao.t1.ByteBufTest:  PooledUnsafeDirectByteBuf(ridx: 0, widx: 0, cap: 20)
+```
+
+
+
+
+
+
+
+## 直接内存和堆内存
+
+可以使用下面的代码来创建池化基于堆的 ByteBuf
+
+```java
+ByteBuf buffer = ByteBufAllocator.DEFAULT.heapBuffer();
+```
+
+
+
+也可以使用下面的代码来创建池化基于直接内存的 ByteBuf
+
+```java
+ByteBuf buffer = ByteBufAllocator.DEFAULT.directBuffer();
+```
+
+* 直接内存创建和销毁的代价昂贵，但读写性能高（少一次内存复制），适合配合池化功能一起用
+* 直接内存对 GC 压力小，因为这部分内存不受 JVM 垃圾回收的管理，但也要注意及时主动释放
+
+
+
+```java
+package mao.t2;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuf
+ * Package(包名): mao.t2
+ * Class(类名): ByteBufTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/20
+ * Time(创建时间)： 21:38
+ * Version(版本): 1.0
+ * Description(描述)： 直接内存和堆内存
+ */
+
+@Slf4j
+public class ByteBufTest
+{
+    public static void main(String[] args)
+    {
+        //基于堆的 ByteBuf
+        ByteBuf byteBuf = ByteBufAllocator.DEFAULT.heapBuffer();
+        log.info(byteBuf.toString());
+        //释放
+        boolean release = byteBuf.release();
+        log.debug(String.valueOf(release));
+        //基于直接内存的 ByteBuf
+        byteBuf = ByteBufAllocator.DEFAULT.directBuffer();
+        log.info(byteBuf.toString());
+        //释放
+        release = byteBuf.release();
+        log.debug(String.valueOf(release));
+        //默认ByteBuf
+        byteBuf = ByteBufAllocator.DEFAULT.buffer();
+        log.info(byteBuf.toString());
+        //释放
+        release = byteBuf.release();
+        log.debug(String.valueOf(release));
+
+        //基于堆的 ByteBuf，容量为32
+        byteBuf = ByteBufAllocator.DEFAULT.heapBuffer(32);
+        log.info(byteBuf.toString());
+        //释放
+        release = byteBuf.release();
+        log.debug(String.valueOf(release));
+        //基于直接内存的 ByteBuf，容量为64
+        byteBuf = ByteBufAllocator.DEFAULT.directBuffer(64);
+        log.info(byteBuf.toString());
+        //释放
+        release = byteBuf.release();
+        log.debug(String.valueOf(release));
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+2023-03-20  21:45:41.028  [main] INFO  mao.t2.ByteBufTest:  PooledUnsafeHeapByteBuf(ridx: 0, widx: 0, cap: 256)
+2023-03-20  21:45:41.028  [main] DEBUG mao.t2.ByteBufTest:  true
+2023-03-20  21:45:41.032  [main] INFO  mao.t2.ByteBufTest:  PooledUnsafeDirectByteBuf(ridx: 0, widx: 0, cap: 256)
+2023-03-20  21:45:41.032  [main] DEBUG mao.t2.ByteBufTest:  true
+2023-03-20  21:45:41.032  [main] INFO  mao.t2.ByteBufTest:  PooledUnsafeDirectByteBuf(ridx: 0, widx: 0, cap: 256)
+2023-03-20  21:45:41.032  [main] DEBUG mao.t2.ByteBufTest:  true
+2023-03-20  21:45:41.032  [main] INFO  mao.t2.ByteBufTest:  PooledUnsafeHeapByteBuf(ridx: 0, widx: 0, cap: 32)
+2023-03-20  21:45:41.032  [main] DEBUG mao.t2.ByteBufTest:  true
+2023-03-20  21:45:41.032  [main] INFO  mao.t2.ByteBufTest:  PooledUnsafeDirectByteBuf(ridx: 0, widx: 0, cap: 64)
+2023-03-20  21:45:41.032  [main] DEBUG mao.t2.ByteBufTest:  true
+```
+
+
+
+
+
+
+
+
+
+## 池化和非池化
