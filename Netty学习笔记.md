@@ -9461,3 +9461,399 @@ public class ByteBufTest
 
 
 ## 池化和非池化
+
+池化的最大意义在于可以重用 ByteBuf，优点有
+
+* 没有池化，则每次都得创建新的 ByteBuf 实例，这个操作对直接内存代价昂贵，就算是堆内存，也会增加 GC 压力
+* 有了池化，则可以重用池中 ByteBuf 实例，并且采用了与 jemalloc 类似的内存分配算法提升分配效率
+* 高并发时，池化功能更节约内存，减少内存溢出的可能
+
+
+
+池化功能是否开启，可以通过下面的系统环境变量来设置
+
+```java
+-Dio.netty.allocator.type={unpooled|pooled}
+```
+
+* 4.1 以后，非 Android 平台默认启用池化实现，Android 平台启用非池化实现
+* 4.1 之前，池化功能还不成熟，默认是非池化实现
+
+
+
+
+
+
+
+## 组成
+
+ByteBuf 由四部分组成
+
+![image-20230321215942964](img/Netty学习笔记/image-20230321215942964.png)
+
+
+
+最开始读写指针都在 0 位置
+
+
+
+## 写入
+
+
+
+
+
+|                           方法签名                           |          含义          |                    备注                     |
+| :----------------------------------------------------------: | :--------------------: | :-----------------------------------------: |
+|                 writeBoolean(boolean value)                  |    写入 boolean 值     |      用一字节 01\|00 代表 true\|false       |
+|                     writeByte(int value)                     |      写入 byte 值      |                                             |
+|                    writeShort(int value)                     |     写入 short 值      |                                             |
+|                     writeInt(int value)                      |      写入 int 值       |  Big Endian，即 0x250，写入后 00 00 02 50   |
+|                    writeIntLE(int value)                     |      写入 int 值       | Little Endian，即 0x250，写入后 50 02 00 00 |
+|                    writeLong(long value)                     |      写入 long 值      |                                             |
+|                     writeChar(int value)                     |      写入 char 值      |                                             |
+|                   writeFloat(float value)                    |     写入 float 值      |                                             |
+|                  writeDouble(double value)                   |     写入 double 值     |                                             |
+|                   writeBytes(ByteBuf src)                    | 写入 netty 的 ByteBuf  |                                             |
+|                    writeBytes(byte[] src)                    |      写入 byte[]       |                                             |
+|                  writeBytes(ByteBuffer src)                  | 写入 nio 的 ByteBuffer |                                             |
+| int writeCharSequence(CharSequence sequence, Charset charset) |       写入字符串       |                                             |
+
+
+
+* 这些方法的未指明返回值的，其返回值都是 ByteBuf，意味着可以链式调用
+* 网络传输，默认习惯是 Big Endian
+
+
+
+```java
+package mao.t3;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import lombok.extern.slf4j.Slf4j;
+import mao.utils.ByteBufUtils;
+
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuf
+ * Package(包名): mao.t3
+ * Class(类名): ByteBufTest
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/22
+ * Time(创建时间)： 14:23
+ * Version(版本): 1.0
+ * Description(描述)： 写入
+ */
+
+@Slf4j
+public class ByteBufTest
+{
+    public static void main(String[] args)
+    {
+        //创建一个16字节的ByteBuf
+        ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeBoolean(false);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //写入数据
+        buffer.writeBoolean(true);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeByte(0x22);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //写入数据
+        buffer.writeByte(66);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeShort(0x6943);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeInt(0x6946);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //写入数据，大端模式
+        buffer.writeIntLE(0x4522);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeLong(0x7547);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //写入数据，大端模式
+        buffer.writeLongLE(0x379856);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeChar('5');
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeFloat(66.3f);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //写入数据
+        buffer.writeFloat(57.14f);
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeBytes(new byte[]{65, 66, 67, 68, 69, 70});
+        //打印
+        ByteBufUtils.debug(buffer);
+
+        System.out.println("\n\n");
+
+        //创建一个16字节的ByteBuf
+        buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        //写入数据
+        buffer.writeCharSequence("hello,world", StandardCharsets.UTF_8);
+        //打印
+        ByteBufUtils.debug(buffer);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+read index:0 write index:1 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00                                              |.               |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:2 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 01                                           |..              |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:1 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 22                                              |"               |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:2 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 22 42                                           |"B              |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:2 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 69 43                                           |iC              |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:4 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 00 69 46                                     |..iF            |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:8 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 00 69 46 22 45 00 00                         |..iF"E..        |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:8 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 00 00 00 00 00 75 47                         |......uG        |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:16 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 00 00 00 00 00 75 47 56 98 37 00 00 00 00 00 |......uGV.7.....|
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:2 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 00 35                                           |.5              |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:4 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 42 84 99 9a                                     |B...            |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:8 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 42 84 99 9a 42 64 8f 5c                         |B...Bd.\        |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:6 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 41 42 43 44 45 46                               |ABCDEF          |
++--------+-------------------------------------------------+----------------+
+
+
+
+read index:0 write index:11 capacity:64
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 2c 77 6f 72 6c 64                |hello,world     |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+还有一类方法是 set 开头的一系列方法，也可以写入数据，但不会改变写指针位置
+
+
+
+```java
+package mao.t3;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import mao.utils.ByteBufUtils;
+
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_ByteBuf
+ * Package(包名): mao.t3
+ * Class(类名): ByteBufTest2
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/22
+ * Time(创建时间)： 14:42
+ * Version(版本): 1.0
+ * Description(描述)： 无
+ */
+
+public class ByteBufTest2
+{
+    public static void main(String[] args)
+    {
+        //创建一个16字节的ByteBuf
+        ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(16);
+        buffer.writeCharSequence("12345", StandardCharsets.UTF_8);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //设置数据
+        buffer.setByte(0, 0x45);
+        //打印
+        ByteBufUtils.debug(buffer);
+        //设置数据
+        buffer.setByte(2, 0x47);
+        //打印
+        ByteBufUtils.debug(buffer);
+    }
+}
+```
+
+
+
+运行结果：
+
+```sh
+read index:0 write index:5 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 31 32 33 34 35                                  |12345           |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:5 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 45 32 33 34 35                                  |E2345           |
++--------+-------------------------------------------------+----------------+
+read index:0 write index:5 capacity:16
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 45 32 47 34 35                                  |E2G45           |
++--------+-------------------------------------------------+----------------+
+```
+
+
+
+
+
+
+
+
+
+## 扩容
+
