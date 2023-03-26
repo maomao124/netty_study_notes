@@ -14354,3 +14354,678 @@ hello
 
 ## 自定义协议
 
+### 协议要素
+
+* 魔数，用来在第一时间判定是否是无效数据包
+* 版本号，可以支持协议的升级
+* 序列化算法，消息正文到底采用哪种序列化反序列化方式，可以由此扩展，例如：json、protobuf、hessian、jdk
+* 指令类型，是登录、注册、单聊、群聊... 跟业务相关
+* 请求序号，为了双工通信，提供异步能力
+* 正文长度
+* 消息正文
+
+
+
+
+
+### 协议父类消息
+
+```java
+package mao.message;
+
+import lombok.Data;
+
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): Message
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:05
+ * Version(版本): 1.0
+ * Description(描述)： 协议父类消息
+ */
+
+@Data
+public abstract class Message implements Serializable
+{
+    /**
+     * 根据消息类型字节，获得对应的消息 class
+     *
+     * @param messageType 消息类型字节
+     * @return 消息 class
+     */
+    public static Class<? extends Message> getMessageClass(int messageType)
+    {
+        return messageClasses.get(messageType);
+    }
+
+    /**
+     * 序列id
+     */
+    private int sequenceId;
+
+    /**
+     * 消息类型
+     */
+    private int messageType;
+
+    /**
+     * 得到消息类型
+     *
+     * @return int
+     */
+    public abstract int getMessageType();
+
+    public static final int PingMessage = 1;
+    public static final int PongMessage = 2;
+    public static final int HelloRequestMessage = 3;
+    public static final int HelloResponseMessage = 4;
+
+
+    /**
+     * 请求类型 byte 值
+     */
+    public static final int RPC_MESSAGE_TYPE_REQUEST = 101;
+
+    /**
+     * 响应类型 byte 值
+     */
+    public static final int RPC_MESSAGE_TYPE_RESPONSE = 102;
+
+    /**
+     * 消息类
+     */
+    private static final Map<Integer, Class<? extends Message>> messageClasses = new HashMap<>();
+
+    static
+    {
+        messageClasses.put(PingMessage, PingMessage.class);
+        messageClasses.put(PongMessage, PongMessage.class);
+        messageClasses.put(HelloRequestMessage, HelloRequestMessage.class);
+        messageClasses.put(HelloResponseMessage, HelloResponseMessage.class);
+    }
+}
+```
+
+
+
+
+
+### 抽象响应消息
+
+```java
+package mao.message;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): AbstractResponseMessage
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:12
+ * Version(版本): 1.0
+ * Description(描述)： 抽象响应消息
+ */
+
+
+@Data
+@EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
+public abstract class AbstractResponseMessage extends Message
+{
+    /**
+     * 是否是成功的消息
+     */
+    private boolean success;
+
+    /**
+     * 如果失败，失败的原因
+     */
+    private String reason;
+
+    public AbstractResponseMessage()
+    {
+    }
+
+    public AbstractResponseMessage(boolean success, String reason)
+    {
+        this.success = success;
+        this.reason = reason;
+    }
+}
+```
+
+
+
+
+
+### ping消息
+
+```java
+package mao.message;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): PingMessage
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:17
+ * Version(版本): 1.0
+ * Description(描述)： ping消息
+ */
+
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class PingMessage extends Message
+{
+    /**
+     * 时间
+     */
+    private long time;
+
+    @Override
+    public int getMessageType()
+    {
+        return PingMessage;
+    }
+}
+```
+
+
+
+
+
+###  pong消息
+
+```java
+package mao.message;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import mao.protocol.SequenceIdGenerator;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): PongMessage
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:18
+ * Version(版本): 1.0
+ * Description(描述)： pong 消息
+ */
+
+
+@Data
+@EqualsAndHashCode(callSuper = true)
+public class PongMessage extends Message
+{
+    /**
+     * 请求时间
+     */
+    private long time;
+
+    public PongMessage(int time)
+    {
+        this.time = time;
+        setSequenceId(SequenceIdGenerator.nextId());
+    }
+
+    public PongMessage()
+    {
+        setSequenceId(SequenceIdGenerator.nextId());
+    }
+
+    @Override
+    public int getMessageType()
+    {
+        return PongMessage;
+    }
+}
+```
+
+
+
+
+
+### 打招呼的请求消息
+
+```java
+package mao.message;
+
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): HelloRequestMessage
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:20
+ * Version(版本): 1.0
+ * Description(描述)： 打招呼的请求消息
+ */
+
+
+@Data
+@EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
+public class HelloRequestMessage extends Message
+{
+    /**
+     * 打招呼的人的姓名
+     */
+    private String name;
+
+    /**
+     * 内容
+     */
+    private String body;
+
+    @Override
+    public int getMessageType()
+    {
+        return HelloRequestMessage;
+    }
+}
+```
+
+
+
+
+
+### 打招呼的响应消息
+
+```java
+package mao.message;
+
+import lombok.*;
+import mao.protocol.SequenceIdGenerator;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.message
+ * Class(类名): HelloResponseMessage
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 14:23
+ * Version(版本): 1.0
+ * Description(描述)： 打招呼的响应消息
+ */
+
+
+@Data
+@EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
+public class HelloResponseMessage extends AbstractResponseMessage
+{
+    /**
+     * 要响应的消息
+     */
+    private String body;
+
+    public HelloResponseMessage(String body)
+    {
+        this.body = body;
+        setSequenceId(SequenceIdGenerator.nextId());
+    }
+
+    public HelloResponseMessage(boolean success, String reason, String body)
+    {
+        super(success, reason);
+        this.body = body;
+        setSequenceId(SequenceIdGenerator.nextId());
+    }
+
+    public HelloResponseMessage()
+    {
+        setSequenceId(SequenceIdGenerator.nextId());
+    }
+
+    @Override
+    public int getMessageType()
+    {
+        return HelloResponseMessage;
+    }
+
+    //这里写静态方法简化类的频繁创建
+
+    /**
+     * 成功
+     *
+     * @param body 消息内容
+     * @return {@link HelloResponseMessage}
+     */
+    public static HelloResponseMessage success(String body)
+    {
+        return new HelloResponseMessage(true, null, body);
+    }
+
+
+    /**
+     * 失败
+     *
+     * @return {@link HelloResponseMessage}
+     */
+    public static HelloResponseMessage fail()
+    {
+        return new HelloResponseMessage(false, "未知", null);
+    }
+
+    /**
+     * 失败
+     *
+     * @param reason 原因
+     * @return {@link HelloResponseMessage}
+     */
+    public static HelloResponseMessage fail(String reason)
+    {
+        return new HelloResponseMessage(false, reason, null);
+    }
+
+}
+```
+
+
+
+
+
+### config.properties
+
+```properties
+server.port=8080
+serializer.algorithm=Json
+```
+
+
+
+
+
+### 服务配置类
+
+```java
+package mao.config;
+
+import mao.protocol.SerializerAlgorithm;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.config
+ * Class(类名): ServerConfig
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 21:18
+ * Version(版本): 1.0
+ * Description(描述)： 服务配置类
+ */
+
+public class ServerConfig
+{
+
+    private static Properties properties;
+
+    static
+    {
+        try (InputStream inputStream =
+                     ServerConfig.class.getClassLoader().getResourceAsStream("config.properties"))
+        {
+            properties = new Properties();
+            properties.load(inputStream);
+        }
+        catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 得到服务器端口號
+     *
+     * @return int
+     */
+    public static int getServerPort()
+    {
+        String value = properties.getProperty("server.port");
+        if (value == null)
+        {
+            return 8080;
+        }
+        else
+        {
+            return Integer.parseInt(value);
+        }
+    }
+
+    /**
+     * 得到序列化器算法
+     *
+     * @return {@link SerializerAlgorithm}
+     */
+    public static SerializerAlgorithm getSerializerAlgorithm()
+    {
+        String value = properties.getProperty("serializer.algorithm");
+        if (value == null)
+        {
+            return SerializerAlgorithm.Java;
+        }
+        else
+        {
+            return SerializerAlgorithm.valueOf(value);
+        }
+    }
+}
+```
+
+
+
+
+
+
+
+### Serializer
+
+用于扩展序列化、反序列化算法
+
+```java
+package mao.protocol;
+
+import java.io.*;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.protocol
+ * Interface(接口名): Serializer
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 21:10
+ * Version(版本): 1.0
+ * Description(描述)： 用于扩展序列化、反序列化算法
+ */
+
+public interface Serializer
+{
+    /**
+     * 反序列化
+     *
+     * @param clazz clazz
+     * @param bytes 字节数组
+     * @return {@link T}
+     */
+    <T> T deserialize(Class<T> clazz, byte[] bytes);
+
+    /**
+     * 序列化
+     *
+     * @param object 对象
+     * @return {@link byte[]}
+     */
+    <T> byte[] serialize(T object);
+
+}
+```
+
+
+
+
+
+### SerializerAlgorithm
+
+```java
+package mao.protocol;
+
+import com.alibaba.fastjson.JSON;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.protocol
+ * Enum(枚举名): SerializerAlgorithm
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 21:12
+ * Version(版本): 1.0
+ * Description(描述)： 序列化算法，json采用fastjson
+ */
+
+public enum SerializerAlgorithm implements Serializer
+{
+    Java
+            {
+                @Override
+                public <T> T deserialize(Class<T> clazz, byte[] bytes)
+                {
+                    try
+                    {
+                        ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(bytes));
+                        return (T) objectInputStream.readObject();
+                    }
+                    catch (IOException | ClassNotFoundException e)
+                    {
+                        throw new RuntimeException("反序列化失败", e);
+                    }
+                }
+
+                @Override
+                public <T> byte[] serialize(T object)
+                {
+                    try
+                    {
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
+                        objectOutputStream.writeObject(object);
+                        return byteArrayOutputStream.toByteArray();
+                    }
+                    catch (IOException e)
+                    {
+                        throw new RuntimeException("序列化失败", e);
+                    }
+                }
+            },
+
+    Json
+            {
+                @Override
+                public <T> T deserialize(Class<T> clazz, byte[] bytes)
+                {
+                    String json = new String(bytes, StandardCharsets.UTF_8);
+                    return JSON.parseObject(json, clazz);
+                }
+
+                @Override
+                public <T> byte[] serialize(T object)
+                {
+                    String jsonString = JSON.toJSONString(object);
+                    return jsonString.getBytes(StandardCharsets.UTF_8);
+                }
+            }
+}
+```
+
+
+
+
+
+### 序列ID生成器
+
+比较简单，非全局唯一
+
+```java
+package mao.protocol;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Project name(项目名称)：Netty_自定义协议
+ * Package(包名): mao.protocol
+ * Class(类名): SequenceIdGenerator
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/3/26
+ * Time(创建时间)： 21:06
+ * Version(版本): 1.0
+ * Description(描述)： 序列 ID 生成器，内部采用CAS的方式累加
+ */
+
+public class SequenceIdGenerator
+{
+    /**
+     * id
+     */
+    private static final AtomicInteger id = new AtomicInteger();
+
+    public static int nextId()
+    {
+        return id.incrementAndGet();
+    }
+}
+```
+
+
+
+
+
+
+
+### 协议解码器
