@@ -19094,5 +19094,304 @@ public List<Channel> reBalance(int reBalanceNumber)
 
 
 
+# 参数调优
 
+## CONNECT_TIMEOUT_MILLIS
+
+* 属于 SocketChannal 参数
+* 用在客户端建立连接时，如果在指定毫秒内无法连接，会抛出 timeout 异常
+
+* SO_TIMEOUT 主要用在阻塞 IO，阻塞 IO 中 accept，read 等都是无限等待的，如果不希望永远阻塞，使用它调整超时时间
+
+
+
+```java
+
+    public static void main(String[] args) 
+    {
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        try 
+        {
+            Bootstrap bootstrap = new Bootstrap()
+                    .group(group)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 300)
+                    .channel(NioSocketChannel.class)
+                    .handler(new LoggingHandler());
+            ChannelFuture future = bootstrap.connect("127.0.0.1", 8080);
+            future.sync().channel().closeFuture().sync();
+        } catch (Exception e) 
+        {
+            e.printStackTrace();
+            log.debug("timeout");
+        } finally 
+        {
+            group.shutdownGracefully();
+        }
+    }
+```
+
+
+
+
+
+
+
+## SO_BACKLOG
+
+属于 ServerSocketChannal 参数
+
+
+
+```mermaid
+sequenceDiagram
+
+participant c as client
+participant s as server
+participant sq as syns queue
+participant aq as accept queue
+
+s ->> s : bind()
+s ->> s : listen()
+c ->> c : connect()
+c ->> s : 1. SYN
+Note left of c : SYN_SEND
+s ->> sq : put
+Note right of s : SYN_RCVD
+s ->> c : 2. SYN + ACK
+Note left of c : ESTABLISHED
+c ->> s : 3. ACK
+sq ->> aq : put
+Note right of s : ESTABLISHED
+aq -->> s : 
+s ->> s : accept()
+```
+
+
+
+
+
+1. 第一次握手，client 发送 SYN 到 server，状态修改为 SYN_SEND，server 收到，状态改变为 SYN_REVD，并将该请求放入 sync queue 队列
+2. 第二次握手，server 回复 SYN + ACK 给 client，client 收到，状态改变为 ESTABLISHED，并发送 ACK 给 server
+3. 第三次握手，server 收到 ACK，状态改变为 ESTABLISHED，将该请求从 sync queue 放入 accept queue
+
+其中
+
+* 在 linux 2.2 之前，backlog 大小包括了两个队列的大小，在 2.2 之后，分别用下面两个参数来控制
+
+* sync queue - 半连接队列
+  * 大小通过 /proc/sys/net/ipv4/tcp_max_syn_backlog 指定，在 `syncookies` 启用的情况下，逻辑上没有最大值限制，这个设置便被忽略
+* accept queue - 全连接队列
+  * 其大小通过 /proc/sys/net/core/somaxconn 指定，在使用 listen 函数时，内核会根据传入的 backlog 参数与系统参数，取二者的较小值
+  * 如果 accpet queue 队列满了，server 将发送一个拒绝连接的错误信息到 client
+
+
+
+netty 中
+
+可以通过  option(ChannelOption.SO_BACKLOG, 值) 来设置大小
+
+
+
+
+
+
+
+## ulimit -n
+
+属于操作系统参数
+
+**修改句柄数量**
+
+只对当前会话有效，重启后失效
+
+
+
+
+
+
+
+## RCVBUF_ALLOCATOR
+
+* 属于 SocketChannal 参数
+* 控制 netty 接收缓冲区大小
+* 负责入站数据的分配，决定入站缓冲区的大小（并可动态调整），统一采用 direct 直接内存，具体池化还是非池化由 allocator 决定
+
+
+
+
+
+## SO_SNDBUF
+
+* SO_SNDBUF 属于 SocketChannal 参数
+* **作用：** TCP 数据发送缓冲区大小
+* **说明：** 一般情况下，该值可由用户在任意时刻设置，但当设置值超过64KB时，需要在连接到远端之前设置
+
+
+
+
+
+## SO_RCVBUF
+
+* SO_RCVBUF 既可用于 SocketChannal 参数，也可以用于 ServerSocketChannal 参数
+* **作用：** TCP 数据接受缓冲区大小
+
+
+
+
+
+## SO_KEEPALIVE
+
+* 属于 SocketChannal 参数
+* **作用：** TCP 层 keepalive，连接保活，默认值为False
+* **说明：** 启用该功能时，TCP会主动探测空闲连接的有效性。可以将此功能视为TCP的心跳机制，需要注意的是：默认的心跳间隔是7200s即2小时。Netty默认关闭该功能
+
+
+
+
+
+## SO_REUSEADDR
+
+* 属于 SocketChannal 参数
+* **作用：** 地址重用，默认值False
+* **使用场景：** 1. 当有一个有相同本地地址和端口的socket1处于TIME_WAIT状态时，而你希望启动的程序的socket2要占用该地址和端口，比如重启服务且保持先前端口。2.有多块网卡或用IP Alias技术的机器在同一端口启动多个进程，但每个进程绑定的本地IP地址不能相同。3.单个进程绑定相同的端口到多个socket上，但每个socket绑定的ip地址不同。4.完全相同的地址和端口的重复绑定。但这只用于UDP的多播，不用于TCP
+
+
+
+
+
+## SO_LINGER
+
+* 属于 SocketChannal 参数
+* **作用：** 关闭 Socket 的延迟时间，默认禁用该功能
+* **设置方式：** -1以及所有<0的数表示socket.close()方法立即返回，但OS底层会将发送缓冲区全部发送到对端。0表示socket.close()方法立即返回，OS放弃发送缓冲区的数据直接向对端发送RST包，对端收到复位错误。非0整数值表示调用socket.close()方法的线程被阻塞直到延迟时间到或发送缓冲区中的数据发送完毕，若超时，则对端会收到复位错误
+
+
+
+
+
+## IP_TOS
+
+* 属于 SocketChannal 参数
+* **作用：** 置 IP 头部的 Type-of-Service 字段，用于描述 IP 包的优先级 和 QoS 选项
+* **取值：**
+  - 1000 - 最小延迟（minimize delay）
+  - 0100 - 最大吞吐量（maximize throughput）
+  - 0010 - 最大可靠性（maximize reliability）
+  - 0001 - 最小成本（minimize monetary cost）
+  - 0000 - normal service (默认值)
+
+
+
+
+
+## TCP_NODELAY
+
+* 属于 SocketChannal 参数
+* **作用：** 设置是否启用 Nagle 算法:用将小的碎片数据连接成更大的报文 来提高发送效率（Netty默认为True而操作系统默认为False）
+* **注意：** 如果需要发送一些较小的报文，则需要禁用该算法，因为 Nagle 算法，数据包会堆积到一定的数量后一起发送，这就可能**导致数据的发送存在一定的延时**
+
+
+
+
+
+
+
+## WRITE_BUFFER_WATER_MARK
+
+* 通用参数，无childOption和option之分
+* **作用：** 高低水位线、间接防止写数据 OOM，默认值32k -> 64k
+* **说明：** 他是属于channel级别的，每一个连接就是一个设置，所以值比较小，当连接数量上升之后值也就变大了
+
+
+
+
+
+## MAX_MESSAGES_PER_READ
+
+* 通用参数，无childOption和option之分
+* **作用：** 最大允许“连续”读次数，默认值为16
+
+
+
+
+
+## WRITE_SPIN_COUNT
+
+* 通用参数，无childOption和option之分
+* **作用：** 最大允许“连读”写次数，默认值16
+* **说明：** 对于大数据量的写操作至多进行16次，如果16次仍没有全部写完数据，此时会提交一个新的写任务给EventLoop，任务将在下次调度继续执行。这样，其他的写请求才能被响应不会因为单个大数据量写请求而耽误
+
+
+
+
+
+
+
+## ALLOCATOR
+
+* 通用参数，无childOption和option之分
+* **作用：** ByteBuf的分配器，默认值为ByteBufAllocator.DEFAULT
+* 4.0版本为UnpooledByteBufAllocator，4.1版本为PooledByteBufAllocator。该值也可以使用系统参数`io.netty.allocator.type`配置，使用字符串值："unpooled"，"pooled"
+
+
+
+
+
+## AUTO_READ
+
+* 通用参数，无childOption和option之分
+* **作用：** 是否监听“读事件”，默认值为true
+* **注意：** 设置此标记的方法也触发注册或移除读事件的监听
+
+
+
+
+
+## AUTO_CLOSE
+
+* 通用参数，无childOption和option之分
+* **作用：** 写数据”失败，是否关闭连接，默认值为true
+
+
+
+
+
+## MESSAGE_SIZE_ESTIMATOR
+
+* 通用参数，无childOption和option之分
+* **作用：** 消息大小估算器，默认为DefaultMessageSizeEstimator.DEFAULT
+* **说明：** 估算ByteBuf、ByteBufHolder和FileRegion的大小，其中ByteBuf和ByteBufHolder为实际大小，FileRegion估算值为0。该值估算的字节数在计算水位时使用，FileRegion为0可知FileRegion不影响高低水位
+
+
+
+
+
+## SINGLE_EVENTEXECUTOR_PER _GROUP
+
+* 通用参数，无childOption和option之分
+* **作用：** 单线程执行ChannelPipeline中的事件，默认值为true
+* **说明：** 该值控制执行ChannelPipeline中执行ChannelHandler的线程。如果为true，整个pipeline由一个线程执行，这样不需要进行线程切换以及线程同步，是Netty4的推荐做法；如果为false，ChannelHandler中的处理过程会由Group中的不同线程执行
+
+
+
+
+
+## ALLOW_HALF_CLOSURE
+
+* 通用参数，无childOption和option之分
+* **作用：** 关闭连接时，允许半关，默认值false
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Netty优化
 
