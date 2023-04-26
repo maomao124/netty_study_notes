@@ -20578,3 +20578,470 @@ public class Server
 
 # Netty流量整形
 
+## 概述
+
+在实际生活中我们可能会因为某些原因需要控制服务端的读写速率，根据业务需求对不同的用户提供不同的下载速度，Netty本身也提供了高低水位和流量整形，两种方式来控制流量。
+
+
+
+### 高低水位
+
+netty中的高低水位机制会在发送缓冲区的数据超过高水位时触发channelWritabilityChanged事件同时将channel的写状态设置为false，但是这个写状态只是程序层面的状态，程序还是可以继续写入数据。所以使用这个机制时需要自行判断是否可写，并做相应的处理
+
+
+
+### 流量整形
+
+netty提供了ChannelTrafficShapingHandler、GlobalTrafficShapingHandler、GlobalChannelTrafficShapingHandler三个流量整形处理器，依次用于控制单个channel、所有channel、所有channel。这些处理器控制流量的原理相同的。控制读取速度是通过先从TCP缓存区读取数据，然后根据读取的数据大小和读取速率的限制计算出，需要暂停读取数据的时间。这样从平均来看读取速度就被降低了。控制写速度则是根据数据大小和写出速率计算出预期写出的时间，然后封装为一个待发送任务放到延迟消息队列中，同时提交一个延迟任务查看消息是否可发送了。这样从平均来看每秒钟的数据读写速度就被控制在读写限制下了
+
+
+
+
+
+
+
+## 高低水位机制的实现
+
+ netty通过一个ChannelPipeline维护了一个双向链表，当触发Inbound事件时事件会从head传播到tail，而Outboud事件则有两种传播方式，一是从当前handler传播到head、二是从tail传播到head。使用哪种传播方式取决于你是通过ChannelHandlerContext直接发送数据还是通过channel发送数据。
+当我们在netty中使用write方法发送数据时，这个数据其实是写到了一个缓冲区中，并未直接发送给接收方，netty使用ChannelOutboundBuffer封装出站消息的发送，所有的消息都会存储在一个链表中，直到缓冲区被flush方法刷新，netty才会将数据真正发送出去。
+
+**netty默认设置的高水位为64KB，低水位为32KB**
+
+
+
+
+
+ChannelOutboundBuffer的部分源码
+
+![image-20230426203111276](img/Netty学习笔记/image-20230426203111276.png)
+
+
+
+
+
+该方法会在用户调用write()发送数据时被调用，它会将待发送的数据加入到数据缓冲区中
+
+![image-20230426203344454](img/Netty学习笔记/image-20230426203344454.png)
+
+
+
+
+
+加入缓冲区后，调用incrementPendingOutboundBytes方法增加待发送的字节数，同时判断字节数是否超过高水位
+
+![image-20230426203451230](img/Netty学习笔记/image-20230426203451230.png)
+
+
+
+
+
+超过高水位则将可写状态设置为false，并触发可写状态改变事件
+
+![image-20230426203538642](img/Netty学习笔记/image-20230426203538642.png)
+
+
+
+
+
+此方法将未刷新的数据刷到准备发送的已刷新队列中
+
+
+
+
+
+
+
+## 高低水位机制的应用
+
+
+
+服务端
+
+```java
+package mao.t1;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Project name(项目名称)：Netty_traffic_shaping
+ * Package(包名): mao.t1
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/4/26
+ * Time(创建时间)： 20:36
+ * Version(版本): 1.0
+ * Description(描述)： 高低水位机制-服务端
+ */
+
+@Slf4j
+public class Server
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        new ServerBootstrap()
+                .group(new NioEventLoopGroup(), new NioEventLoopGroup())
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter()
+                        {
+                            @Override
+                            public void channelActive(ChannelHandlerContext ctx) throws Exception
+                            {
+                                log.info("客户端连接：" + ctx.channel().remoteAddress());
+                            }
+
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                            {
+                                log.info("读事件");
+                                super.channelRead(ctx, msg);
+                            }
+                        });
+                    }
+                })
+                .bind(8080)
+                .sync();
+        log.info("启动完成");
+    }
+}
+```
+
+
+
+客户端
+
+```java
+package mao.t1;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.*;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Project name(项目名称)：Netty_traffic_shaping
+ * Package(包名): mao.t1
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/4/26
+ * Time(创建时间)： 20:36
+ * Version(版本): 1.0
+ * Description(描述)： 高低水位机制-客户端
+ */
+
+@Slf4j
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        //10kb
+        byte[] data = new byte[1024 * 10 * 8];
+
+        Channel channel = new Bootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter()
+                        {
+                            @Override
+                            public void channelActive(ChannelHandlerContext ctx) throws Exception
+                            {
+                                //设置低水位
+                                ctx.channel().config().setWriteBufferLowWaterMark(20 * 1024);
+                                //设置高水位
+                                ctx.channel().config().setWriteBufferHighWaterMark(100 * 1024);
+                            }
+
+                            @Override
+                            public void channelInactive(ChannelHandlerContext ctx) throws Exception
+                            {
+                                System.exit(1);
+                            }
+                        });
+                    }
+                })
+                .connect(new InetSocketAddress(8080))
+                .sync()
+                .channel();
+
+        int total = 0;
+
+        while (true)
+        {
+            if (channel.isWritable())
+            {
+                ByteBuf buffer = channel.alloc().buffer(1024 * 10 * 8);
+                buffer.writeBytes(data);
+                channel.write(buffer);
+                total += 10;
+                log.info("写入10kb数据，已发送：" + total + "kb");
+            }
+            else
+            {
+                log.info("服务端不可写");
+                channel.flush();
+                Thread.sleep(1000);
+            }
+
+        }
+    }
+}
+```
+
+
+
+客户端输出：
+
+```sh
+2023-04-26  21:39:43.110  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：10kb
+2023-04-26  21:39:43.111  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：20kb
+2023-04-26  21:39:43.111  [main] INFO  mao.t1.Client:  服务端不可写
+2023-04-26  21:39:44.116  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：30kb
+2023-04-26  21:39:44.116  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：40kb
+2023-04-26  21:39:44.116  [main] INFO  mao.t1.Client:  服务端不可写
+2023-04-26  21:39:45.127  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：50kb
+2023-04-26  21:39:45.128  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：60kb
+2023-04-26  21:39:45.128  [main] INFO  mao.t1.Client:  服务端不可写
+2023-04-26  21:39:46.141  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：70kb
+2023-04-26  21:39:46.141  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：80kb
+2023-04-26  21:39:46.141  [main] INFO  mao.t1.Client:  服务端不可写
+2023-04-26  21:39:47.145  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：90kb
+2023-04-26  21:39:47.145  [main] INFO  mao.t1.Client:  写入10kb数据，已发送：100kb
+2023-04-26  21:39:47.145  [main] INFO  mao.t1.Client:  服务端不可写
+```
+
+
+
+**通过ChannelHandlerContext即可设置高低水位，在激活事件中设置可以使配置在建立连接时就生效，高低水位如果设置在客户端就是控制发送给服务器的数据速度，设置在服务器就是控制发送给客户端的数据速度**
+
+
+
+虽然Netty提供了这个一个高低水位的机制,控制向Netty缓冲区写入数据.但是我们可以忽略它,依然可以向Netty缓冲区写入数据,但是遗憾的是,**TCP缓冲区大小是固定的**,总会达到某个时间点,Netty不能向TCP缓冲区写入数据了
+
+
+
+## 模拟限速下载
+
+服务端
+
+```java
+package mao.t2;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Project name(项目名称)：Netty_traffic_shaping
+ * Package(包名): mao.t2
+ * Class(类名): Server
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/4/26
+ * Time(创建时间)： 21:45
+ * Version(版本): 1.0
+ * Description(描述)： 高低水位机制-模拟限速下载-服务端
+ */
+
+@Slf4j
+public class Server
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        new ServerBootstrap()
+                .group(new NioEventLoopGroup(), new NioEventLoopGroup())
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter()
+                        {
+
+                            @Override
+                            public void channelActive(ChannelHandlerContext ctx) throws Exception
+                            {
+                                //设置低水位
+                                ctx.channel().config().setWriteBufferLowWaterMark(10 * 1024);
+                                //设置高水位
+                                ctx.channel().config().setWriteBufferHighWaterMark(20 * 1024);
+                                log.info("客户端连接：" + ctx.channel().remoteAddress());
+                                while (true)
+                                {
+
+                                    if (ctx.channel().isWritable())
+                                    {
+                                        //一次100字节
+                                        ByteBuf buffer = ctx.alloc().buffer(100 * 8);
+                                        buffer.writeBytes(new byte[100 * 8]);
+                                        ctx.write(buffer);
+                                    }
+                                    else
+                                    {
+                                        ctx.channel().flush();
+                                        Thread.sleep(1000);
+                                    }
+                                }
+                            }
+
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                            {
+                                log.info("读事件");
+                                super.channelRead(ctx, msg);
+                            }
+                        });
+                    }
+                })
+                .bind(8080)
+                .sync();
+        log.info("启动完成");
+    }
+}
+```
+
+
+
+客户端
+
+```java
+package mao.t2;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
+
+import java.net.InetSocketAddress;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Project name(项目名称)：Netty_traffic_shaping
+ * Package(包名): mao.t2
+ * Class(类名): Client
+ * Author(作者）: mao
+ * Author QQ：1296193245
+ * GitHub：https://github.com/maomao124/
+ * Date(创建日期)： 2023/4/26
+ * Time(创建时间)： 21:45
+ * Version(版本): 1.0
+ * Description(描述)： 高低水位机制-模拟限速下载-客户端
+ */
+
+@Slf4j
+public class Client
+{
+    @SneakyThrows
+    public static void main(String[] args)
+    {
+        AtomicLong total = new AtomicLong();
+        Channel channel = new Bootstrap()
+                .group(new NioEventLoopGroup())
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<NioSocketChannel>()
+                {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception
+                    {
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter()
+                        {
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception
+                            {
+                                ByteBuf byteBuf = (ByteBuf) msg;
+                                int writerIndex = byteBuf.writerIndex();
+                                long l = total.addAndGet(writerIndex);
+                                log.info("已下载：" + l / 8 / 1024 + "字节");
+                                super.channelRead(ctx, msg);
+                            }
+                        });
+                    }
+                })
+                .connect(new InetSocketAddress(8080))
+                .sync()
+                .channel();
+
+    }
+}
+```
+
+
+
+```sh
+2023-04-26  22:05:23.391  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：0字节
+2023-04-26  22:05:23.392  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：2字节
+2023-04-26  22:05:23.393  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：7字节
+2023-04-26  22:05:24.396  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：8字节
+2023-04-26  22:05:24.396  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：13字节
+2023-04-26  22:05:24.396  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：14字节
+2023-04-26  22:05:25.411  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：17字节
+2023-04-26  22:05:25.412  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：21字节
+2023-04-26  22:05:25.412  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：21字节
+2023-04-26  22:05:26.427  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：23字节
+2023-04-26  22:05:26.427  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：24字节
+2023-04-26  22:05:26.427  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：26字节
+2023-04-26  22:05:26.427  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：28字节
+2023-04-26  22:05:27.430  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：30字节
+2023-04-26  22:05:27.431  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：34字节
+2023-04-26  22:05:27.431  [nioEventLoopGroup-2-1] INFO  mao.t2.Client:  已下载：36字节
+......
+```
+
+
+
+
+
+
+
+
+
+
+
+## 流量整形的实现
+
